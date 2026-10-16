@@ -4,14 +4,15 @@
 // Pure: no DOM, no storage. Plans are recomputed from the profile, so retaking the questionnaire updates them.
 import { PLAN, DAYS } from "./plan.js";
 import { BUILTIN } from "./library.js";
-import { fitCost } from "./tailor.js";
+import { fitCost, patternOf, muscleOf } from "./tailor.js";
+import { ALL_EX } from "./plan.js";
 
 export const STYLES = {
   auto: ["Let us decide", "We'll pick the best layout for how many days you train"],
   full: ["Full body every time", "Every workout hits your whole body"],
   split: ["Split by body part", "Each day focuses on certain muscles"]
 };
-export const HOME_GEAR = { dumbbells: "Dumbbells", band: "Resistance bands", mat: "A mat or some open floor" };
+export const HOME_GEAR = { dumbbells: "Dumbbells", barbell: "Barbell and plates", bench: "A weight bench", band: "Resistance bands", mat: "A mat or some open floor" };
 const CAP = { 30: 4, 45: 5, 60: 6, 90: 8 };
 const cap = prof => CAP[prof.sessionLen] || 6;
 
@@ -81,22 +82,78 @@ const SLOTS = [
 ];
 export function homeMoves(prof, lib = BUILTIN) {
   const gear = new Set(prof.homeGear || []);
+  const benchOk = m => gear.has("bench") || !(m.bench || m.position === "lying" || /bench/i.test(m.how || ""));
   return lib.filter(m => m.equip === "bodyweight" || (m.equip === "band" && gear.has("band")) ||
-    (m.equip === "dumbbell" && gear.has("dumbbells") && m.position !== "lying" && !/bench/i.test(m.how || "")));
+    (m.equip === "dumbbell" && gear.has("dumbbells") && benchOk(m)) || (m.equip === "barbell" && gear.has("barbell") && benchOk(m)));
 }
-export function buildHome(prof, w, lib = BUILTIN) {
-  const gear = new Set(prof.homeGear || []), hasKit = gear.has("dumbbells") || gear.has("band");
-  // Lower score = better fit. Use their equipment when they have it, and ease beginners in.
-  const moves = homeMoves(prof, lib).map(m => ({ m, c: fitCost(m, prof) }))
-    .filter(x => x.c < 10)
+// Fit score for a home move: lower is better. Prefers the person's own equipment, eases beginners in.
+function homeScored(prof, lib) {
+  const gear = new Set(prof.homeGear || []), hasKit = ["dumbbells", "band", "barbell"].some(g => gear.has(g));
+  return homeMoves(prof, lib).map(m => ({ m, c: fitCost(m, prof) })).filter(x => x.c < 10)
     .map(x => ({ ...x, s: x.c + (hasKit && x.m.equip === "bodyweight" ? 1.5 : 0) + (prof.experience === "new" && x.m.difficulty >= 2 ? 3 : 0) }));
+}
+const FAMILY = { squat: ["squat", "lunge"], lunge: ["lunge", "squat"], hinge: ["hinge"], push: ["push"], pull: ["pull", "isolation"], core: ["core", "rotation"], rotation: ["rotation", "core"], carry: ["carry", "core"], isolation: ["isolation"] };
+// The home version of a gym day: each exercise swapped for the best home move that works the same muscles
+// (same main muscle, same kind of movement when possible). Keeps the day's focus; same length or close.
+export function homeVersion(prof, exList, lib = BUILTIN) {
+  const pool = homeScored(prof, lib), used = new Set(), out = [];
+  for (const ex of exList) {
+    const focus = (ex.lib?.focus || ex.focus || [])[0]; if (!focus) continue;
+    const pat = ex.lib?.pattern || (ALL_EX[ex.id] ? patternOf(ALL_EX[ex.id]) : null);
+    const fam = FAMILY[pat] || null;
+    const mus = muscleOf(ex.n || ex.lib?.name || "");
+    const cands = pool.filter(x => !used.has(x.m.id) && (x.m.focus || []).includes(focus))
+      .map(x => ({ ...x, t: x.s + (fam && !fam.includes(x.m.pattern) ? 4 : 0) + ((x.m.focus || [])[0] === focus ? 0 : 1) + (mus && muscleOf(x.m.name) !== mus ? 4 : 0) }))
+      .sort((a, b) => a.t - b.t || a.m.id.localeCompare(b.m.id));
+    if (cands.length) { used.add(cands[0].m.id); out.push(`lib-${cands[0].m.id}`); }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- bonus days
+export const BONUS_FOCUS = {
+  full: ["Full body", ["legs", "glutes", "chest", "back", "core", "shoulders"]],
+  upper: ["Upper body", ["chest", "back", "shoulders", "arms"]],
+  lower: ["Lower body", ["legs", "glutes", "calves"]],
+  core: ["Core", ["core"]],
+  chest: ["Chest", ["chest"]], back: ["Back", ["back"]], shoulders: ["Shoulders", ["shoulders"]], arms: ["Arms", ["arms"]],
+  glutes: ["Glutes", ["glutes"]], legs: ["Legs", ["legs"]]
+};
+const RELATED = { arms: ["chest", "back"], shoulders: ["chest", "back"], chest: ["shoulders"], back: ["shoulders"], calves: ["legs"] };
+// A bonus workout for the chosen focus, at the gym (plan exercises) or at home (their home gear).
+export function buildBonus(prof, focus, where, week = "A", lib = BUILTIN) {
+  const [title, areas] = BONUS_FOCUS[focus] || BONUS_FOCUS.full;
+  const n = Math.max(3, Math.min(cap(prof), 6));
+  const out = [];
+  if (where === "home") {
+    const pool = homeScored(prof, lib).sort((a, b) => a.s - b.s || a.m.id.localeCompare(b.m.id));
+    const fill = list => { for (let round = 0; out.length < n && round < 4; round++) for (const a of list) {
+      if (out.length >= n) break;
+      const hit = pool.find(x => (x.m.focus || [])[0] === a && !out.includes(`lib-${x.m.id}`)) || pool.find(x => (x.m.focus || []).includes(a) && !out.includes(`lib-${x.m.id}`));
+      if (hit) out.push(`lib-${hit.m.id}`);
+    } };
+    fill(areas);
+    // Little home gear for this area (say, arms with no weights): round it out with moves that also work it.
+    if (out.length < 3) fill(RELATED[focus] || []);
+  } else {
+    const order = [week, week === "A" ? "B" : "A"].flatMap(w => DAYS.flatMap(d => PLAN[w][d].ex));
+    for (let round = 0; out.length < n && round < 6; round++) for (const a of areas) {
+      if (out.length >= n) break;
+      const hit = order.filter(e => e.focus[0] === a && !out.includes(e.id))[round % 2] || order.find(e => e.focus.includes(a) && !out.includes(e.id));
+      if (hit) out.push(hit.id);
+    }
+  }
+  return { title: `Bonus: ${title}`, ex: [...new Set(out)] };
+}
+
+export function buildHome(prof, w, lib = BUILTIN) {
+  const moves = homeScored(prof, lib);
   const used = new Set(), out = [];
   const n = Math.max(4, Math.min(cap(prof), 7));
   for (const slot of SLOTS) {
     if (out.length >= n) break;
     const opts = moves.filter(x => slot(x.m) && !used.has(x.m.id)).sort((a, b) => a.s - b.s || a.m.id.localeCompare(b.m.id));
     if (!opts.length) continue;
-    // Week B takes the runner-up when it fits nearly as well, so the two home workouts differ.
     const choice = w === "B" && opts[1] && opts[1].s <= opts[0].s + 1.5 ? opts[1] : opts[0];
     used.add(choice.m.id); out.push(`lib-${choice.m.id}`);
   }

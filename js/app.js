@@ -14,7 +14,7 @@ import { connect, save, remove, patch, dropField, signOutAndClear, importAll, CO
 
 // ---------------------------------------------------------------- helpers
 // Shown at the bottom of Settings so you can tell whether a phone has the latest update. Bump with sw.js VERSION.
-const APP_VERSION = "33";
+const APP_VERSION = "34";
 // The app's name lives here only (plus manifest.webmanifest and the <title> tags in index.html, which can't read JS).
 const APP_NAME = "GymBunnies.fit";
 const $ = (s, r = document) => r.querySelector(s);
@@ -97,7 +97,8 @@ function resolveEx(id, entry) {
 }
 // ---------------------------------------------------------------- each person's days
 // Mat and Benny (and anyone who trains 4 days, split) use the original plan: Monday–Thursday keys, shown as Day 1–4.
-// Everyone else gets a plan built from their questionnaire (program.js): keys D1…D7. "Home" is the at-home workout.
+// Everyone else gets a plan built from their questionnaire (program.js): keys D1…D7. "Bonus" is an extra day they build.
+// Any plan day can be done at home: same day, same muscles, exercises swapped for their home gear (session.atHome).
 const progMemo = new WeakMap();
 function progOf(u) {
   const p = P(u); let m = progMemo.get(p);
@@ -109,11 +110,32 @@ function daysFor(u, week = curWeek()) { const w = progOf(u)[week]; return w ? w.
 function planDay(u, week, day) {
   const m = progOf(u);
   if (day === "Home") { const h = week === "B" ? m.homeB : m.homeA; return { title: h.title, ex: h.ex.map(id => resolveEx(id, {})).filter(Boolean) }; }
+  if (day === "Bonus") { const b = bonusPickFor(u, week); const w = PG.buildBonus(P(u), b.focus, b.where, week); return { title: w.title, ex: w.ex.map(id => resolveEx(id, {})).filter(Boolean) }; }
   const d = m[week]?.find(x => x.key === day);
   if (d) return { title: d.title, ex: d.ex.map(id => resolveEx(id, {})).filter(Boolean) };
   return PLAN[week][day] || PLAN[week].Mon;
 }
-const dayName = day => (day === "Home" ? "Home workout" : DAY_NAMES[day] || (/^D\d$/.test(day || "") ? `Day ${day.slice(1)}` : day || ""));
+const dayName = day => (day === "Home" ? "Home workout" : day === "Bonus" ? "Bonus day" : DAY_NAMES[day] || (/^D\d$/.test(day || "") ? `Day ${day.slice(1)}` : day || ""));
+// Doing a plan day at home: chosen on this phone (state.homeMode) or saved on the workout (atHome).
+const homeKey = (u, date, sel = state.sel) => `${u}|${date}|${slotKey(sel)}`;
+function isHome(u, date, sel = state.sel) {
+  if (!sel || sel.day === "Bonus") return sel?.day === "Bonus" && bonusPickFor(u, sel.week).where === "home";
+  const k = homeKey(u, date, sel); if (k in state.homeMode) return state.homeMode[k];
+  return !!sessionFor(u, date, sel)?.atHome;
+}
+// A bonus day's focus and place: what was picked on this phone today, else what the saved bonus workout used.
+function bonusPickFor(u, week) {
+  if (state.bonusPick && state.bonusPick.u === u) return state.bonusPick;
+  const s = sessionFor(u, BASE_DATE(), { week, day: "Bonus" });
+  return { u, focus: s?.bonusFocus || "full", where: s?.bonusWhere || "gym" };
+}
+function bonusPicker(u) {
+  const d = state.bonusDraft || { focus: "full", where: "gym" };
+  return `<section class="card bonus-picker" id="bonus-picker" aria-labelledby="bp-h"><h3 class="h3" id="bp-h" tabindex="-1">Where do you want to focus?</h3>
+    <div class="focus-chips ob-chips" role="radiogroup" aria-labelledby="bp-h">${Object.entries(PG.BONUS_FOCUS).map(([k, [l]]) => `<button type="button" role="radio" data-act="bonusSet" data-k="focus" data-v="${k}" aria-checked="${d.focus === k}" aria-pressed="${d.focus === k}">${esc(l)}</button>`).join("")}</div>
+    <div class="field"><span id="bp-w">Where are you working out?</span><div class="seg" role="radiogroup" aria-labelledby="bp-w">${[["gym", "At the gym"], ["home", "At home"]].map(([k, l]) => `<button type="button" role="radio" data-act="bonusSet" data-k="where" data-v="${k}" aria-checked="${d.where === k}" aria-pressed="${d.where === k}">${l}</button>`).join("")}</div></div>
+    <button class="btn primary block" data-act="bonusGo">Build my bonus workout</button></section>`;
+}
 // The original plan day a built day is closest to (for warm-ups and the interval-cardio schedule).
 function baseDay(u, week, day) {
   if (DAYS.includes(day)) return day;
@@ -151,7 +173,7 @@ const state = {
   user: store.get("twp-user", null),
   partner: store.get("twp-partner", false),
   view: store.get("twp-view", "today"),
-  logUser: null, logDate: null, viewUser: null, sel: null, userTouchedSel: false,
+  logUser: null, logDate: null, viewUser: null, sel: null, userTouchedSel: false, homeMode: {}, bonusPicker: false, bonusDraft: null, bonusPick: null,
   variants: store.get("twp-variants", {}),
   editing: new Set(),
   data: { sessions: [], body: [], activities: [], settings: [], library: [], profiles: [], pings: [] }, libF: { q: "", equip: "all", focus: "all", pattern: "all", difficulty: "all", effort: "all", impact: "all", sort: "name", hideSore: "yes", ...store.get("twp-libf", {}) }, libEdit: null, libSwapFor: null, addPlan: null, planEdit: false,
@@ -183,7 +205,7 @@ function slotDate(week, day) {
   return S.addDays(cyc.start, (week === "B" ? 7 : 0) + Math.max(0, daysFor(LU(), week).indexOf(day)));
 }
 // The next plan day to do, ignoring a home workout (which never stands in for a plan day).
-function nextPlanDay() { const wk = S.cycleInfo(TODAY(), cycleStart()).week; return S.pickDay(state.data.sessions.filter(x => x.day !== "Home"), LU(), TODAY(), cycleStart(), daysFor(LU(), wk)); }
+function nextPlanDay() { const wk = S.cycleInfo(TODAY(), cycleStart()).week; return S.pickDay(state.data.sessions.filter(x => x.day !== "Home" && x.day !== "Bonus"), LU(), TODAY(), cycleStart(), daysFor(LU(), wk)); }
 function autoSel() { const wk = S.cycleInfo(TODAY(), cycleStart()).week; return S.pickDay(state.data.sessions, LU(), TODAY(), cycleStart(), daysFor(LU(), wk)); }
 // Weekly goal from the questionnaire (3 if they haven't taken it), and days with a bonus session logged.
 const paceOf = u => +P(u).daysPerWeek || 3;
@@ -216,7 +238,7 @@ const sid = (u, date, sel = state.sel) => `${u}_${date}_${slotKey(sel)}`;
 function sessionFor(u, date, sel = state.sel) {
   if (!sel) return state.data.sessions.find(s => s.user === u && s.date === date) || null;
   const cyc = S.cycleInfo(date, cycleStart());
-  const hits = state.data.sessions.filter(s => s.user === u && s.week === sel.week && s.day === sel.day && s.date >= cyc.start && s.date <= cyc.end && (sel.day !== "Home" || s.date === date));
+  const hits = state.data.sessions.filter(s => s.user === u && s.week === sel.week && s.day === sel.day && s.date >= cyc.start && s.date <= cyc.end && ((sel.day !== "Home" && sel.day !== "Bonus") || s.date === date));
   return hits.find(s => s.date === date) || hits.sort((a, b) => b.date.localeCompare(a.date) || (b.updatedAt || 0) - (a.updatedAt || 0))[0] || null;
 }
 // Something else (another week/day) was logged on this date: used so today's bike commute doesn't show on other days.
@@ -226,7 +248,8 @@ const otherSlotOn = (u, date) => state.data.sessions.some(s => s.user === u && s
 function writeSession(u, date, fields) {
   const cur = sessionFor(u, date);
   if (cur) { patch("sessions", cur.id, fields); return; }
-  patch("sessions", sid(u, date), { user: u, date, week: state.sel.week, day: state.sel.day, ...fields });
+  const extra = state.sel.day === "Bonus" ? (({ focus, where }) => ({ bonusFocus: focus, bonusWhere: where }))(bonusPickFor(u, state.sel.week)) : isHome(u, date) ? { atHome: true } : {};
+  patch("sessions", sid(u, date), { user: u, date, week: state.sel.week, day: state.sel.day, ...extra, ...fields });
 }
 // Exercises are stored as a map keyed by exercise id (ex.<id>); older records used an array. Readers get one sorted array.
 function normalizeSession(s) {
@@ -340,7 +363,9 @@ function todaysList(u, date) {
   const { week, day } = state.sel;
   const s = sessionFor(u, date);
   const edits = dayEdits(u, week, day);
-  const list = planDay(u, week, day).ex.filter(ex => !edits.remove.includes(ex.id)).map(ex => ({ ex, added: false }));
+  let base = planDay(u, week, day).ex;
+  if (day !== "Bonus" && isHome(u, date)) base = PG.homeVersion(P(u), base).map(id => resolveEx(id, {})).filter(Boolean);
+  const list = base.filter(ex => !edits.remove.includes(ex.id)).map(ex => ({ ex, added: false }));
   for (const id of edits.add) { const ex = resolveEx(id, {}); if (ex && !ex.custom) list.push({ ex, added: false, planned: true }); }
   if (edits.order?.length) list.sort((a, b) => { const ia = edits.order.indexOf(a.ex.id), ib = edits.order.indexOf(b.ex.id); return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib); });
   const ids = new Set(list.map(x => x.ex.id));
@@ -377,7 +402,7 @@ function render() {
   document.querySelectorAll("#tabs button").forEach(b => { if (b.dataset.view === state.view) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); });
   // Pick the day to open on. Until workouts have loaded (and unless you've tapped a day), keep re-picking.
   // Switched to someone with different days (say, from a 4-day plan to a 2-day one): start them on their own day.
-  if (state.sel && state.sel.day !== "Home" && !daysFor(LU(), state.sel.week).includes(state.sel.day)) { state.sel = null; state.userTouchedSel = false; }
+  if (state.sel && state.sel.day !== "Home" && state.sel.day !== "Bonus" && !daysFor(LU(), state.sel.week).includes(state.sel.day)) { state.sel = null; state.userTouchedSel = false; }
   if (!state.sel || (!state.selSettled && !state.userTouchedSel)) {
     // Logging a past date: open that date's workout. Otherwise the plan day for today's date.
     const s = state.logDate ? sessionFor(LU(), BASE_DATE(), null) : null;
@@ -430,7 +455,7 @@ function viewToday() {
     const pick = autoSel();
     if (pick.complete && pick.week === week && ci.week === week) {
       const n = daysFor(u, week).length, bonusToday = bonusDates(u).includes(TODAY());
-      return `<div class="banner">All ${n === 1 ? "of this week's workout" : n + " days"} done this week. Week ${week === "A" ? "B" : "A"} starts Monday at Day 1.${n < 7 ? ` Want a bonus day? Do the home workout, or 20–30 minutes of cardio plus some stretching. <span class="row" style="margin-top:8px"><button class="btn small" data-act="selDay" data-v="Home">Home workout</button>${bonusToday ? "<b>Bonus logged today.</b>" : `<button class="btn small" data-act="bonusLog">Log bonus cardio</button>`}</span>` : ""}</div>`;
+      return `<div class="banner">${n === 1 ? "This week's workout is done." : n === 2 ? "Both days done this week." : `All ${n} days done this week.`} Week ${week === "A" ? "B" : "A"} starts Monday at Day 1.${n < 7 ? ` Up for a bonus day? <span class="row" style="margin-top:8px"><button class="btn small primary" data-act="bonusOpen">Start a bonus day</button>${bonusToday ? "<b>Bonus cardio logged today.</b>" : `<button class="btn small" data-act="bonusLog">Just log some cardio</button>`}</span>` : ""}</div>${state.bonusPicker ? bonusPicker(u) : ""}`;
     }
     return ""; })()}
   ${dl ? `<div class="banner"><b>Lighter week</b> until ${S.fmtDate(deloadOf(u).to)}: about 60% of your usual weights and one less set. <button class="btn small" data-act="endDeload">End it early</button></div>` : dlSug ? `<div class="banner">${esc(dlSug)} <button class="btn small" data-act="startDeload">Start a lighter week</button></div>` : ""}
@@ -440,14 +465,15 @@ function viewToday() {
       const note = ds.state === "done" ? `✓ ${S.fmtDate(ds.date)}` : ds.state === "missed" ? "Missed" : next ? "Up next" : "";
       const sr = ds.state === "done" ? `done ${S.fmtDate(ds.date)}` : ds.state === "missed" ? "missed" : next ? "up next" : "not done yet";
       return `<button data-act="selDay" data-v="${d}" aria-pressed="${d === day}" class="${ds.state}${next ? " next" : ""}" aria-label="${dayName(d)}, ${esc(dayTitle(u, week, d))}, ${sr}"><span class="d" aria-hidden="true">${dayName(d)}</span><span class="m" aria-hidden="true">${esc(dayTitle(u, week, d).split(",")[0])}</span>${note ? `<span class="today-dot" aria-hidden="true">${note}</span>` : ""}</button>`; }).join(""); })()}</div>
-    <button type="button" class="btn block home-pick" data-act="selDay" data-v="Home" aria-pressed="${day === "Home"}">${icon("gym", 20)}<span>${day === "Home" ? "Home workout picked. Tap a day above to go back." : "No gym today? Work out at home"}</span></button>
-    ${day === "Home" ? `<p class="small muted home-note">Uses what you have at home${(P(u).homeGear || []).length ? ` (${esc(listText((P(u).homeGear || []).map(g => PG.HOME_GEAR[g].toLowerCase())))})` : ": just your body weight"}. Change your gear in Settings → Your plan. It counts toward your week, and it never replaces a plan day.</p>` : ""}
-    <div class="ring-row"><div class="today-title"><span class="eyebrow">Week ${week} · ${dayName(day)}</span><h2 class="h2" id="today-title">${esc(dayTitle(u, week, day))}</h2></div>${funAt("medium") ? ring(done, list.length) : `<span class="small muted">${done} of ${list.length} done</span>`}</div>
+    ${day === "Bonus" ? `<p class="small muted home-note">Bonus day: ${esc(PG.BONUS_FOCUS[bonusPickFor(u, week).focus]?.[0] || "")}, ${bonusPickFor(u, week).where === "home" ? "at home" : "at the gym"}. It counts toward your week. Tap a day above to get back to your plan. <button class="btn small" data-act="bonusOpen">Change it</button></p>${state.bonusPicker ? bonusPicker(u) : ""}`
+      : `<button type="button" class="btn block home-pick" data-act="homeToggle" aria-pressed="${isHome(u, date)}">${icon("gym", 20)}<span>${isHome(u, date) ? `Doing ${esc(dayName(day))} at home. Switch back to the gym version` : `No gym today? Do ${esc(dayName(day))} at home`}</span></button>
+    ${isHome(u, date) ? `<p class="small muted home-note">Same muscles as ${esc(dayName(day))}, using what you have at home${(P(u).homeGear || []).length ? ` (${esc(listText((P(u).homeGear || []).map(g => (PG.HOME_GEAR[g] || g).toLowerCase())))})` : ": just your body weight"}. It counts as ${esc(dayName(day))}. Change your home gear in Settings → Your plan.</p>` : ""}`}
+    <div class="ring-row"><div class="today-title"><span class="eyebrow">Week ${week} · ${dayName(day)}${day !== "Bonus" && isHome(u, date) ? " · At home" : ""}</span><h2 class="h2" id="today-title">${esc(dayTitle(u, week, day))}</h2></div>${funAt("medium") ? ring(done, list.length) : `<span class="small muted">${done} of ${list.length} done</span>`}</div>
     ${funHeader(u)}
     ${workoutBar(u, date, s)}
     <details class="more row-disclosure"><summary>${esc(p.name)}'s focus, notes, and date${icon("chevron", 20, { stroke: 2 })}</summary><div class="panel"><p>${esc(p.focusNote)}</p><ul class="small">${(p.notes || []).map(n => `<li>${esc(n)}</li>`).join("")}</ul>
       <label class="field">Logging date<input type="date" data-act="logDate" value="${date}"></label>
-      ${s ? `<div class="field"><span id="move-lbl">This workout is saved as Week ${esc(week)} ${esc(dayName(day))}. Move it to:</span><div class="row" role="group" aria-labelledby="move-lbl">${["A", "B"].flatMap(w => [...daysFor(LU(), w), "Home"].map(d => [w, d])).filter(([w, d]) => w !== week || d !== day).map(([w, d]) => `<button type="button" class="btn small" data-act="moveWorkout" data-v="${w}${d}">Week ${w} ${dayName(d)}</button>`).join("")}</div></div>` : ""}</div></details>
+      ${s ? `<div class="field"><span id="move-lbl">This workout is saved as Week ${esc(week)} ${esc(dayName(day))}. Move it to:</span><div class="row" role="group" aria-labelledby="move-lbl">${["A", "B"].flatMap(w => daysFor(LU(), w).map(d => [w, d])).filter(([w, d]) => w !== week || d !== day).map(([w, d]) => `<button type="button" class="btn small" data-act="moveWorkout" data-v="${w}${d}">Week ${w} ${dayName(d)}</button>`).join("")}</div></div>` : ""}</div></details>
     <div class="row"><button class="btn small" data-act="planEdit" aria-pressed="${!!state.planEdit}">${state.planEdit ? "Done editing plan" : "Edit this day's plan"}</button>
       ${funAt("medium") && partner !== u ? `<button class="btn small" data-act="hi5">🙌 High-five ${esc(P(partner).name)}</button>` : ""}</div>
     ${state.planEdit ? planEditBox(u, week, day) : ""}
@@ -1846,6 +1872,19 @@ document.addEventListener("click", e => {
       drawOnboarding(); $(`#overlay [data-act=obToggle][data-k="${k}"][data-v="${el.dataset.v}"]`)?.focus(); break; }
     case "obNone": state.ob.a[el.dataset.k] = []; drawOnboarding(); break;
     case "obFinish": finishOnboarding(); break;
+    case "homeToggle": {
+      const u = LU(), date = LD(), k = homeKey(u, date), on = !isHome(u, date);
+      state.homeMode[k] = on; const cur = sessionFor(u, date); if (cur) patch("sessions", cur.id, { atHome: on });
+      toast(on ? `Home version of ${dayName(state.sel.day)}. Same muscles, your home gear.` : "Back to the gym version."); render(); break;
+    }
+    case "bonusOpen": state.bonusPicker = !state.bonusPicker; if (!state.bonusDraft) state.bonusDraft = { focus: "full", where: "gym" }; render(); $("#bonus-picker h3")?.focus(); break;
+    case "bonusSet": state.bonusDraft[el.dataset.k] = el.dataset.v; render(); $(`#bonus-picker [data-act=bonusSet][data-k="${el.dataset.k}"][data-v="${el.dataset.v}"]`)?.focus(); break;
+    case "bonusGo": {
+      state.bonusPick = { u: LU(), ...state.bonusDraft }; state.bonusPicker = false;
+      state.sel = { week: S.cycleInfo(TODAY(), cycleStart()).week, day: "Bonus" }; state.userTouchedSel = true; state.logDate = null;
+      const cur = sessionFor(LU(), TODAY()); if (cur) patch("sessions", cur.id, { bonusFocus: state.bonusPick.focus, bonusWhere: state.bonusPick.where });
+      render(); scrollTo(0, 0); toast(`Bonus day: ${PG.BONUS_FOCUS[state.bonusPick.focus][0]}, ${state.bonusPick.where === "home" ? "at home" : "at the gym"}.`); break;
+    }
     case "bonusLog": save("activities", `${LU()}-${TODAY()}-bonus`, { user: LU(), date: TODAY(), type: "Bonus session" }); toast("Bonus session logged. Superhuman."); render(); break;
     case "tailorOff": saveProfile(state.user, { tailorList: [] }); toast("Back to the standard plan. Retake the questionnaire any time."); openSettings(); break;
     case "editProfile": openProfileForm(state.user); break;

@@ -88,16 +88,16 @@ export function patternOf(ex) {
   const hit = PATTERN_BY_NAME.find(([re]) => re.test(ex.n)); return hit ? hit[1] : null;
 }
 // For isolation moves, keep the same muscle (a triceps move stays a triceps move).
-const MUSCLE = [[/tricep|pushdown|skull|kickback/i, "tri"], [/leg curl|hamstring/i, "ham"], [/leg extension/i, "quad"], [/calf/i, "calf"], [/abduct/i, "abd"], [/adduct/i, "add"],
+const MUSCLE = [[/tricep|pushdown|skull|kickback|\bdip/i, "tri"], [/leg curl|hamstring/i, "ham"], [/leg extension/i, "quad"], [/calf/i, "calf"], [/abduct/i, "abd"], [/adduct/i, "add"],
   [/face pull|rear delt|reverse pec/i, "rear"], [/lateral raise/i, "delt"], [/fly|crossover|pec deck/i, "pec"], [/pullover|straight-arm/i, "lat"], [/curl/i, "bi"]];
-const muscleOf = n => (MUSCLE.find(([re]) => re.test(n)) || [])[1] || null;
+export const muscleOf = n => (MUSCLE.find(([re]) => re.test(n)) || [])[1] || null;
 const FAMILY = { squat: ["squat", "lunge"], lunge: ["lunge", "squat"] };
 function libraryFor(ex, lib, pattern) {
   const main = (ex.focus || [])[0]; if (!main) return [];
   const ok = pattern ? FAMILY[pattern] || [pattern] : null;
   const grp = k => (k === "bw" ? "load" : k || "load"); // bodyweight and loaded reps are interchangeable; timed holds and carries aren't
   const mus = pattern === "isolation" ? muscleOf(ex.n) : null;
-  return lib.filter(b => b.focus?.[0] === main && b.equip !== "cardio" && b.equip !== "band" && grp(b.kind) === grp(ex.kind) && b.name !== ex.n && (!ok || ok.includes(b.pattern)) && (!mus || muscleOf(b.name) === mus));
+  return lib.filter(b => b.focus?.[0] === main && b.equip !== "cardio" && b.equip !== "band" && !b.home && grp(b.kind) === grp(ex.kind) && b.name !== ex.n && (!ok || ok.includes(b.pattern)) && (!mus || muscleOf(b.name) === mus));
 }
 
 export function tailorPlan(prof, { lib = BUILTIN, exercises = Object.values(ALL_EX) } = {}) {

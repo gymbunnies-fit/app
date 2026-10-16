@@ -208,10 +208,29 @@ for (const b of BUILTIN) {
       const h = PG.buildHome(prof, w); const items = h.ex.map(id => BUILTIN.find(b => `lib-${b.id}` === id));
       const tag = `home ${gear.join("+") || "none"} ${lim.join("+")} ${w}`;
       yes(`${tag}: 4+ moves`, items.length >= 4 && items.every(Boolean));
-      yes(`${tag}: only gear they have`, items.every(m => m.equip === "bodyweight" || (m.equip === "band" && gear.includes("band")) || (m.equip === "dumbbell" && gear.includes("dumbbells"))));
+      yes(`${tag}: only gear they have`, items.every(m => m.equip === "bodyweight" || (m.equip === "band" && gear.includes("band")) || (m.equip === "dumbbell" && gear.includes("dumbbells")) || (m.equip === "barbell" && gear.includes("barbell"))));
       if (lim.includes("noFloor")) yes(`${tag}: no floor work`, items.every(m => m.position !== "floor"));
       if (lim.includes("noImpact")) yes(`${tag}: no impact`, items.every(m => !m.impact));
     }
+  }
+  // Doing a plan day at home: same muscles, only their gear, no bench moves without a bench.
+  const { PLAN, DAYS } = await import(join(dir, "plan.js"));
+  for (const gear of [[], ["band"], ["dumbbells"], ["barbell"], ["barbell", "bench", "dumbbells"]]) for (const w of ["A", "B"]) for (const d of DAYS) {
+    const src = PLAN[w][d].ex, out = PG.homeVersion({ homeGear: gear, sessionLen: 60 }, src).map(id => BUILTIN.find(b => `lib-${b.id}` === id));
+    const tag = `home version ${gear.join("+") || "none"} ${w} ${d}`;
+    yes(`${tag}: most of the day kept`, out.length >= Math.min(3, src.length) && out.every(Boolean));
+    yes(`${tag}: works the day's muscles`, out.filter(m => src.some(e => m.focus.includes(e.focus[0]))).length >= out.length - 1);
+    yes(`${tag}: only their gear`, out.every(m => m.equip === "bodyweight" || gear.includes({ band: "band", dumbbell: "dumbbells", barbell: "barbell" }[m.equip])));
+    if (!gear.includes("bench")) yes(`${tag}: no bench needed`, out.every(m => !m.bench && m.position !== "lying"));
+  }
+  for (const f of Object.keys(PG.BONUS_FOCUS)) for (const where of ["gym", "home"]) for (const gear of [[], ["dumbbells", "band"]]) {
+    const b = PG.buildBonus({ homeGear: gear, sessionLen: 45 }, f, where, "A");
+    const areas = PG.BONUS_FOCUS[f][1];
+    const items = b.ex.map(id => id.startsWith("lib-") ? BUILTIN.find(x => `lib-${x.id}` === id) : ALL_EX[id]);
+    const tag = `bonus ${f} ${where} ${gear.join("+") || "none"}`;
+    yes(`${tag}: 3+ exercises, real, no repeats`, items.length >= 3 && items.every(Boolean) && new Set(b.ex).size === b.ex.length);
+    yes(`${tag}: on focus (or a close neighbor when home gear is thin)`, items.every(m => m.focus.some(x => areas.includes(x) || ({ arms: ["chest", "back"], shoulders: ["chest", "back"] }[f] || []).includes(x))));
+    if (where === "home") yes(`${tag}: home gear only`, items.every(m => m.equip === "bodyweight" || (gear.includes("dumbbells") && m.equip === "dumbbell") || (gear.includes("band") && m.equip === "band")));
   }
   const S2 = S;
   const s = (date, week, day) => ({ user: "jo", date, week, day, exercises: [{ id: "x", sets: [{ w: 1, r: 1 }] }] });

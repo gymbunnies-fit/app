@@ -13,7 +13,7 @@ export const LEVEL = { difficulty: ["", "Beginner", "Intermediate", "Advanced"],
 const L = (id, name, focus, pattern, [difficulty, effort, impact], position, joints, sr, how, risks, o = {}) => ({
   id, name, equip: o.equip || "dumbbell", focus, focus2: o.focus2 || [], pattern, difficulty, effort, impact, position,
   unilateral: !!o.uni, joints, sr, how, risks: risks.map(([area, risk, avoid]) => ({ area, risk, avoid })),
-  kind: o.kind || "load", db: o.db !== false, heavy: o.heavy || "", builtin: true
+  kind: o.kind || "load", db: o.db !== false, heavy: o.heavy || "", builtin: true, ...(o.home ? { home: true } : {}), ...(o.bench ? { bench: true } : {})
 });
 
 export const BUILTIN = [
@@ -502,6 +502,36 @@ export const HOME_MOVES = [
     [["lowerBack", "Twisting", "Brace your stomach and keep your hips square."]])
 ];
 BUILTIN.push(...HOME_MOVES);
+
+// Home gym moves with a barbell (some need a bench). Not at our gym, so they never stand in for a gym exercise.
+const BB = (id, name, focus, pattern, lvl, position, joints, sr, how, risks, o = {}) => L(id, name, focus, pattern, lvl, position, joints, sr, how, risks, { equip: "barbell", db: false, home: true, ...o });
+export const BARBELL_MOVES = [
+  BB("bb-back-squat", "Barbell Back Squat", ["legs", "glutes"], "squat", [2, 3, 0], "standing", { knees: 2, hips: 1, lowerBack: 1 }, "3 × 6–8",
+    "Bar on your upper back (from a rack or stands), feet shoulder-width. Sit your hips back and down to a comfortable depth, then drive up.",
+    [["lowerBack", "Low back rounding at the bottom", "Brace hard and only go as deep as your back stays flat."], ["knees", "Knees caving in", "Push your knees out over your toes."]]),
+  BB("bb-deadlift", "Barbell Deadlift", ["glutes", "legs", "back"], "hinge", [2, 3, 0], "standing", { lowerBack: 2, hips: 1, knees: 1 }, "3 × 5",
+    "Bar over your mid-foot. Hinge down, grip just outside your legs, flatten your back, and stand up by pushing the floor away. Lower the same way.",
+    [["lowerBack", "Low back strain from a rounded back", "Chest up, bar close to your legs, and lighter weight until your form is solid."]]),
+  BB("bb-rdl", "Barbell Romanian Deadlift", ["glutes", "legs"], "hinge", [2, 2, 0], "standing", { lowerBack: 2, hips: 1 }, "3 × 8",
+    "Stand holding the bar. Push your hips back with soft knees, sliding the bar down your thighs until you feel your hamstrings, then stand tall.",
+    [["lowerBack", "Rounding your back", "Stop the moment your back wants to round."]]),
+  BB("bb-row", "Barbell Bent-Over Row", ["back"], "pull", [2, 2, 0], "bent", { lowerBack: 2, shoulders: 1, elbows: 1 }, "3 × 8–10",
+    "Hinge forward with a flat back, bar hanging. Pull it to your lower ribs, squeeze your shoulder blades, and lower slowly.",
+    [["lowerBack", "Low back fatigue", "Brace your stomach; a more upright torso is fine."]]),
+  BB("bb-ohp", "Barbell Overhead Press", ["shoulders"], "push", [2, 2, 0], "standing", { shoulders: 2, lowerBack: 1, elbows: 1 }, "3 × 6–8",
+    "Bar at your collarbone, squeeze your glutes, and press straight up, moving your head back out of the way. Lower to your collarbone.",
+    [["lowerBack", "Leaning back", "Squeeze your glutes and keep your ribs down."], ["shoulders", "Shoulder pinch", "Stop if you feel a pinch at the top."]]),
+  BB("bb-curl", "Barbell Curl", ["arms"], "isolation", [1, 1, 0], "standing", { elbows: 1, wrists: 1 }, "3 × 10",
+    "Elbows at your sides, curl the bar up, and lower slowly without swinging.",
+    [["wrists", "Wrist strain", "Use a slightly wider or narrower grip until your wrists feel easy."]]),
+  BB("bb-bench", "Barbell Bench Press", ["chest"], "push", [2, 3, 0], "lying", { shoulders: 2, elbows: 1, wrists: 1 }, "3 × 6–8",
+    "Lie on the bench, eyes under the bar. Lower it to your mid-chest with elbows angled in, then press up. Use safety arms or a spotter.",
+    [["shoulders", "Shoulder strain", "Shoulder blades pinched back, elbows about 45°, and never train heavy alone without safeties."]], { bench: true }),
+  BB("bb-hip-thrust", "Barbell Hip Thrust", ["glutes"], "hinge", [2, 2, 0], "floor", { lowerBack: 1, hips: 1 }, "3 × 8–10",
+    "Upper back on the bench, padded bar over your hips. Drive your hips up until your body is flat from knees to shoulders, squeeze, and lower.",
+    [["lowerBack", "Over-arching at the top", "Tuck your chin and ribs; stop at flat."]], { bench: true })
+];
+BUILTIN.push(...BARBELL_MOVES);
 
 // Fill in defaults so entries typed into the app (machines added later) work like built-in ones.
 export function normalizeLib(e) {

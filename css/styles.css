@@ -839,3 +839,4 @@ body[data-tone="light"] .on-dark{display:none}
 .home-pick[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
 .home-note{margin:6px 2px 0}
 .ob-week{margin:6px 0 8px;padding-left:20px;display:grid;gap:6px}
+.bonus-picker{display:grid;gap:14px;margin:12px 0}

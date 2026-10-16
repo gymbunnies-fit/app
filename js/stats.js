@@ -40,9 +40,9 @@ export function pickDay(sessions, user, today, cycleStart, DAYS = ["Mon", "Tue",
   const week = cyc.week;
   const mine = sessions.filter(x => x.user === user && x.week === week && x.day && x.date >= cyc.start && x.date <= cyc.end && logged(x));
   const todays = mine.find(x => x.date === today);
-  if (todays) return { week, day: todays.day };
   const done = new Set(mine.map(x => x.day));
   const open = DAYS.find(d => !done.has(d));
+  if (todays) return open ? { week, day: todays.day } : { week, day: todays.day, complete: true };
   if (open) return { week, day: open };
   const last = mine.filter(x => DAYS.includes(x.day)).sort((a, b) => b.date.localeCompare(a.date) || DAYS.indexOf(b.day) - DAYS.indexOf(a.day))[0];
   return { week, day: last?.day || "Thu", complete: true };
