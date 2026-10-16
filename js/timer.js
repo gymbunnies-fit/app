@@ -19,12 +19,62 @@ export function setVol(v) {
 }
 const volIcon = v => (v === 0 ? "🔇" : v < 0.4 ? "🔈" : v < 0.75 ? "🔉" : "🔊");
 
-// iPhone: ask for "transient" audio (short alert-style sounds that duck music) so beeps aren't treated
-// as background page audio. Supported on iOS 16.4+; ignored elsewhere.
-try { if (navigator.audioSession && navigator.audioSession.type !== "transient") navigator.audioSession.type = "transient"; } catch { /* not supported */ }
+// Two ways to make sound. "loud" (default) plays real audio files through the phone's media player,
+// the same path music and video use, so it always comes out of the speaker. It can pause music from
+// other apps. "mix" uses Web Audio, which plays over your music but some iPhones keep it silent.
+const MODE_KEY = "twp-sound";
+export function getMode() { try { return localStorage.getItem(MODE_KEY) === "mix" ? "mix" : "loud"; } catch { return "loud"; } }
+function setMode(m) {
+  try { localStorage.setItem(MODE_KEY, m); } catch { /* storage blocked */ }
+  cancelSound(); sessionType(); unlockAudio(); play("test");
+  document.querySelectorAll("[data-act=tMode]").forEach(b => { b.textContent = modeText(); b.setAttribute("aria-pressed", String(m === "mix")); });
+  setTimeout(paintAudioWarn, 400);
+}
+const modeText = () => (getMode() === "loud" ? "Sound: Loud" : "Sound: Over music");
+function sessionType() {
+  try { if (navigator.audioSession) navigator.audioSession.type = getMode() === "mix" ? "ambient" : "auto"; } catch { /* not supported */ }
+}
+sessionType();
 
+// ---- loud: short WAV files made on the phone, volume baked in (iPhones ignore volume on audio elements)
+const TONES = {
+  count: [[0, 660, 0.15]], go: [[0, 1320, 0.4]], test: [[0, 990, 0.2]], silent: [],
+  end: [0, 1, 2, 3, 4].map(i => [i * 0.3, 990, 0.18])
+};
+const wavCache = new Map();
+function wavUrl(kind, vol) {
+  const k = `${kind}:${Math.round(vol * 20)}`; if (wavCache.has(k)) return wavCache.get(k);
+  const sr = 22050, tones = TONES[kind];
+  const dur = Math.max(0.05, ...tones.map(([a, , l]) => a + l + 0.05));
+  const n = Math.round(sr * dur), buf = new ArrayBuffer(44 + n * 2), dv = new DataView(buf);
+  const str = (o, t) => [...t].forEach((c, i) => dv.setUint8(o + i, c.charCodeAt(0)));
+  str(0, "RIFF"); dv.setUint32(4, 36 + n * 2, true); str(8, "WAVEfmt "); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+  dv.setUint32(24, sr, true); dv.setUint32(28, sr * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true); str(36, "data"); dv.setUint32(40, n * 2, true);
+  const amp = 0.6 * vol * 32767;
+  for (const [at, f, len] of tones) {
+    const s0 = Math.round(at * sr), s1 = Math.min(n, Math.round((at + len) * sr));
+    for (let i = s0; i < s1; i++) {
+      const t = (i - s0) / sr, env = Math.min(1, t / 0.01, (len - t) / 0.03);
+      const sq = Math.sin(2 * Math.PI * f * t) >= 0 ? 1 : -1;
+      dv.setInt16(44 + i * 2, Math.round(sq * amp * Math.max(0, env)), true);
+    }
+  }
+  const url = URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
+  wavCache.set(k, url); return url;
+}
+let el = null, elFailed = false;
+function media() { if (!el && typeof Audio !== "undefined") { el = new Audio(); el.preload = "auto"; el.setAttribute("playsinline", ""); } return el; }
+function playMedia(kind) {
+  const a = media(); if (!a) return;
+  try { a.pause(); } catch { /* ignore */ }
+  a.src = wavUrl(kind, kind === "silent" ? 0 : getVol()); a.currentTime = 0;
+  const p = a.play(); if (p?.then) p.then(() => { if (kind !== "silent") elFailed = false; }).catch(err => { if (err?.name === "AbortError") return; elFailed = true; paintAudioWarn(); });
+}
+
+// ---- mix: Web Audio
 function audioOn() {
   try {
+    if (ctx && (ctx.state === "closed" || ctx.state === "interrupted")) { try { ctx.close(); } catch { /* ignore */ } ctx = null; master = null; }
     ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
     if (ctx.state !== "running") ctx.resume?.().catch(() => {});
     if (!master) { master = ctx.createGain(); master.connect(ctx.destination); }
@@ -32,12 +82,13 @@ function audioOn() {
   } catch { ctx = null; }
   return ctx;
 }
-// Called inside a tap: wake the audio up and play one silent sample, which is what iPhones need to allow sound later.
+// Called inside a tap: that's when phones allow sound to start, and later sounds ride on it.
 function unlockAudio() {
+  if (getMode() === "loud") { const a = media(); if (a && a.paused) playMedia("silent"); return; }
   if (!audioOn()) return;
   try { const b = ctx.createBuffer(1, 1, 22050), src = ctx.createBufferSource(); src.buffer = b; src.connect(ctx.destination); src.start(0); } catch { /* ignore */ }
 }
-export const audioBlocked = () => !ctx || ctx.state !== "running";
+export const audioBlocked = () => (getMode() === "loud" ? elFailed : !ctx || ctx.state !== "running");
 function beep(at, freq, len, list = scheduled) {
   if (!ctx || !master) return;
   const o = ctx.createOscillator(), g = ctx.createGain();
@@ -48,8 +99,8 @@ function beep(at, freq, len, list = scheduled) {
   list.push(o);
 }
 // Beeps play when they're due (driven by the timer's own clock), not pre-scheduled when you tap Start.
-// If the phone suspended the audio in between, it's resumed first, and the beep waits for it.
 function play(kind) {
+  if (getMode() === "loud") { playMedia(kind); return; }
   if (!audioOn()) return;
   const go = () => {
     const t = ctx.currentTime + 0.02;
@@ -62,7 +113,7 @@ function play(kind) {
   else ctx.resume?.().then(go).catch(() => {});
 }
 const stopAllIn = list => list.forEach(o => { try { o.stop(); } catch { /* already stopped */ } });
-function cancelSound() { stopAllIn(scheduled); stopAllIn(endBeeps); scheduled = []; endBeeps = []; }
+function cancelSound() { stopAllIn(scheduled); stopAllIn(endBeeps); scheduled = []; endBeeps = []; try { el?.pause(); } catch { /* ignore */ } }
 export function testSound() { unlockAudio(); play("test"); setTimeout(paintAudioWarn, 400); }
 
 const lockScreen = () => navigator.wakeLock?.request("screen").then(w => { wake = w; }).catch(() => {});
@@ -166,9 +217,10 @@ function paintAudioWarn() {
   const blocked = audioBlocked() || getVol() === 0;
   document.querySelectorAll(".tmr-warn").forEach(el => {
     el.hidden = !blocked;
-    el.textContent = getVol() === 0 ? "Timer volume is all the way down." : "No sound is getting through. Turn off Silent mode (Control Center bell, or the Action button), turn the volume up, then tap Test sound.";
+    el.textContent = getVol() === 0 ? "Timer volume is all the way down." : WARN();
   });
 }
+const WARN = () => (getMode() === "mix" ? "The phone is keeping this timer quiet. Tap \u201cSound: Over music\u201d to switch to Loud." : "The phone blocked the sound. Tap Test sound once, then start the timer again.");
 export function html(key, seconds, label = "", from = "") {
   const t = state(key); const v = view(t, seconds); const vol = getVol();
   const al = label ? `: ${esc(label)}` : "";
@@ -179,10 +231,12 @@ export function html(key, seconds, label = "", from = "") {
       <button type="button" class="btn small primary" data-act="tGo" aria-label="${v.btn} timer${al}">${v.btn}</button>
       <button type="button" class="btn small" data-act="tReset" aria-label="Reset timer${al}" ${t ? "" : "hidden"}>Reset</button>
     </div>
+    ${key === "rest" ? "" : `<div class="tmr-adj" role="group" aria-label="Change the time${al}"><button type="button" class="btn small" data-act="tAdj" data-by="-15" aria-label="15 seconds less${al}">−15 sec</button><button type="button" class="btn small" data-act="tAdj" data-by="15" aria-label="15 seconds more${al}">+15 sec</button></div>`}
     <div class="tmr-bar" aria-hidden="true"><i style="width:${Math.max(0, Math.min(100, v.pct))}%"></i></div>
     <div class="tmr-vol"><label class="tmr-vol-l"><span class="tmr-vol-icon" aria-hidden="true">${volIcon(vol)}</span><span class="visually-hidden">Timer volume</span>
       <input type="range" min="0" max="1" step="0.05" value="${vol}" data-tvol></label><button type="button" class="btn small" data-act="tTest">Test sound</button></div>
-    <p class="tmr-warn small" role="status" hidden>No sound is getting through. Turn off Silent mode (Control Center bell, or the Action button), turn the volume up, then tap Test sound.</p>
+    <div class="tmr-mode"><button type="button" class="btn small" data-act="tMode" aria-pressed="${getMode() === "mix"}">${modeText()}</button><span class="small muted">${getMode() === "loud" ? "Always beeps. Can pause your music." : "Plays over your music."}</span></div>
+    <p class="tmr-warn small" role="status" hidden>${WARN()}</p>
   </div>`;
 }
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -200,6 +254,13 @@ document.addEventListener("click", e => {
   }
   if (b.dataset.act === "tReset") stop(key, true);
   if (b.dataset.act === "tTest") testSound();
+  if (b.dataset.act === "tMode") { setMode(getMode() === "loud" ? "mix" : "loud"); const sp = b.parentElement.querySelector("span"); if (sp) sp.textContent = getMode() === "loud" ? "Always beeps. Can pause your music." : "Plays over your music."; }
+  if (b.dataset.act === "tAdj") {
+    const by = +b.dataset.by; adjust(key, by);
+    // Timers tied to a set: the app changes the set's seconds (and the timer follows). Others change here.
+    if (el.dataset.tfrom) document.dispatchEvent(new CustomEvent("twp-timer-adj", { detail: { key, by, el } }));
+    else { el.dataset.tsec = Math.max(5, +el.dataset.tsec + by); if (!state(key)) paintKey(key, null); }
+  }
 }, true);
 // Read the seconds from the linked input (if any), so editing a set's seconds changes its timer right away.
 export const syncCard = card => card?.querySelectorAll(".tmr[data-tfrom]").forEach(syncSeconds);

@@ -1,5 +1,5 @@
 // Two-Week Split — app shell, views and events.
-import { PROFILES as SEEDS, PLAN, STRETCH, CARDIO, DAYS, DAY_NAMES, ALL_EX, FOCUS, PAIN_AREAS, variantDef, exDef } from "./plan.js";
+import { PROFILES as SEEDS, PLAN, STRETCH, CARDIO, CARDIO_MACHINES, DAYS, DAY_NAMES, ALL_EX, FOCUS, PAIN_AREAS, variantDef, exDef } from "./plan.js";
 import * as F from "./fun.js";
 import * as T from "./timer.js";
 import * as A from "./a11y.js";
@@ -12,7 +12,7 @@ import { connect, save, remove, patch, dropField, signOutAndClear, importAll, CO
 
 // ---------------------------------------------------------------- helpers
 // Shown at the bottom of Settings so you can tell whether a phone has the latest update. Bump with sw.js VERSION.
-const APP_VERSION = "23";
+const APP_VERSION = "24";
 // The app's name lives here only (plus manifest.webmanifest and the <title> tags in index.html, which can't read JS).
 const APP_NAME = "Two-Week Split";
 const $ = (s, r = document) => r.querySelector(s);
@@ -572,13 +572,16 @@ function cardioCard(u, date, s) {
   }
   const c = store.get(`twp-c-${u}-${date}-${slotKey()}`, null) || { type: s?.cardio?.type || cp.type, minutes: s?.cardio?.minutes ?? 25, miles: s?.cardio?.miles ?? "", avgHr: s?.cardio?.avgHr ?? "", hiit: s?.cardio?.hiit ?? !!cp.hiit, commute: !!commute, commuteMiles: commute?.miles ?? PROFILES[u].commute.miles };
   const partner = state.partner ? cardioProgram(other(u)).plan(week, day) : null;
+  const machines = [cp.type, ...Object.keys(CARDIO_MACHINES).filter(m => m !== cp.type), ...cardioProgram(u).options.filter(o => !(o in CARDIO_MACHINES) && o !== cp.type)];
+  const pick = machines.includes(c.type) ? c.type : cp.type;
   return `<section class="card cardio-card" id="cardio-form">
-    <div class="between"><h3 class="h3">Cardio · ${esc(cp.type)}</h3>${cp.hiit ? `<span class="tag new">Intervals</span>` : ""}</div>
+    <div class="between"><h3 class="h3">Cardio · ${esc(pick)}</h3>${cp.hiit ? `<span class="tag new">Intervals</span>` : ""}</div>
+    <label class="field cardio-pick">Machine<select data-cf="type">${machines.map(o => `<option value="${esc(o)}" ${o === pick ? "selected" : ""}>${esc(o)}${o === cp.type ? " (recommended)" : ""}</option>`).join("")}</select></label>
     <p>${esc(cp.text)}</p>
+    ${pick !== cp.type ? `<p class="small cardio-swap"><b>On the ${esc(pick.toLowerCase())}:</b> ${esc(CARDIO_MACHINES[pick] || CARDIO_MACHINES.Other)} Same time${cp.hiit ? " and the same easy and hard rounds" : ""} as planned.</p>` : `<p class="small muted">Recommended for today. Pick a different machine above if it's taken or you'd rather.</p>`}
     ${partner ? `<p class="small muted"><b>${PROFILES[other(u)].name}:</b> ${esc(partner.type)}. ${esc(partner.text)}</p>` : ""}
     <details class="more" ${state.editing.has(ek) ? "open" : ""}><summary>Log cardio</summary><div class="panel">
       <div class="grid2">
-        <label class="field">Machine<select data-cf="type">${cardioProgram(u).options.map(o => `<option ${o === c.type ? "selected" : ""}>${esc(o)}</option>`).join("")}</select></label>
         <label class="field">Minutes<input type="number" inputmode="numeric" data-cf="minutes" value="${esc(c.minutes)}"></label>
         <label class="field">Distance (miles)<input type="number" inputmode="decimal" step="any" data-cf="miles" value="${esc(c.miles)}" placeholder="optional"></label>
         <label class="field">Average heart rate<input type="number" inputmode="numeric" data-cf="avgHr" value="${esc(c.avgHr)}" placeholder="optional"></label>
@@ -1909,6 +1912,14 @@ document.addEventListener("click", e => {
   }
 });
 
+// −15 / +15 on a timed set's timer: changes that set's seconds (and the sets after it that matched).
+document.addEventListener("twp-timer-adj", e => {
+  const { key, by, el } = e.detail; if (!key.startsWith("set:")) return;
+  const si = +key.split("|")[3]; const setEl = el.closest("[data-ex]")?.querySelector(`.set[data-s="${si}"]`); if (!setEl) return;
+  const c = cardFor(setEl); if (!c || !c.d.sets[si]) return;
+  setValue(c, "r", Math.max(5, (+c.d.sets[si].r || 0) + by));
+  A.announce(`${c.d.sets[si].r} seconds`);
+});
 document.addEventListener("twp-timer-done", e => {
   const key = e.detail.key; if (!key.startsWith("set:")) return;
   const [u, date, id, si] = key.slice(4).split("|");
@@ -1921,6 +1932,17 @@ document.addEventListener("twp-timer-done", e => {
 A.watchOverlay($("#overlay"), [$("header.top"), $("#main"), $("#tabs"), $(".skip")].filter(Boolean), () => {
   const b = $("#overlay [data-act=closeOverlay]"); if (b) b.click(); else closeOverlay();
 });
+// Keep the tab bar pinned to the bottom on iPhone: hide it while the keyboard is up, then put it back and
+// nudge the page so Safari re-measures where "bottom" is.
+const isTyping = el => el && el.matches?.("input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=button]), textarea, select, [contenteditable]");
+let kbT = null;
+document.addEventListener("focusin", e => { if (isTyping(e.target)) { clearTimeout(kbT); document.body.classList.add("kb-open"); } });
+document.addEventListener("focusout", () => {
+  clearTimeout(kbT);
+  kbT = setTimeout(() => { if (isTyping(document.activeElement)) return; document.body.classList.remove("kb-open"); repin(); }, 120);
+});
+function repin() { const y = window.scrollY; window.scrollTo(window.scrollX, y + 1); requestAnimationFrame(() => window.scrollTo(window.scrollX, y)); }
+window.visualViewport?.addEventListener("resize", () => { if (!isTyping(document.activeElement)) { document.body.classList.remove("kb-open"); repin(); } });
 document.getElementById("tabs").addEventListener("click", e => { const b = e.target.closest("button[data-view]"); if (b) go(b.dataset.view); });
 document.getElementById("who").addEventListener("click", openSettings);
 document.getElementById("gear").addEventListener("click", openSettings);
@@ -1934,6 +1956,7 @@ document.addEventListener("input", e => {
     const form = $("#cardio-form"); const d = {};
     form.querySelectorAll("[data-cf]").forEach(i => { d[i.dataset.cf] = i.type === "checkbox" ? i.checked : i.value; });
     store.set(`twp-c-${LU()}-${LD()}-${slotKey()}`, d);
+    if (el.dataset.cf === "type") { render(); $("#cardio-form [data-cf=type]")?.focus({ preventScroll: true }); }
   } else if (el.dataset.kf) {
     const k = checkinDraft(); const f = el.dataset.kf;
     if (f === "notes") k.notes = el.value; else { k.pain[f.slice(5)] = +el.value; const out = document.querySelector(`[data-out="${f}"]`); if (out) out.textContent = el.value; }

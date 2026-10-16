@@ -269,6 +269,19 @@ export const CARDIO = {
   }
 };
 
+// Every cardio machine you can pick instead of the recommended one, with how to do the same work on it.
+export const CARDIO_MACHINES = {
+  "Bike": "Upright bike. Easy = light resistance, steady pedaling. Hard = turn the resistance up and pedal faster.",
+  "Recumbent bike": "The seated bike with a backrest: easiest on the back, knees, and feet. Hard = more resistance.",
+  "Treadmill": "Walk or jog. Easy = a pace you can talk at. Hard = faster, or add incline.",
+  "Incline walk": "Treadmill at 8 to 12% incline, 2.5 to 3.5 mph. Hands off the rails. Hard = more incline.",
+  "Elliptical": "Easy on the joints. Push and pull the handles too. Hard = more resistance and faster strides.",
+  "Arc trainer": "Like an elliptical with a stair-step feel; gentle on knees. Hard = more resistance or incline.",
+  "Stair climber": "Start slow (level 3 to 5). Touch the rails for balance only. Hard = faster steps. Go easy if feet or knees hurt.",
+  "Rowing machine": "Legs push first, then lean back, then pull to your ribs. Hard = harder, faster strokes.",
+  "Other": "Anything that gets your heart rate up: match the same easy and hard times."
+};
+
 export const DAYS = ["Mon", "Tue", "Wed", "Thu"];
 export const DAY_NAMES = { Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thursday" };
 

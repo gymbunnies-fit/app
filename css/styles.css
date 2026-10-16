@@ -125,6 +125,10 @@ details.more[open] summary::before{content:"−"}
 .tmr-vol-icon{font-size:1.05rem;width:1.4em;text-align:center}
 .tmr-vol input{flex:1;accent-color:var(--accent);min-height:28px}
 .tmr-note{margin-top:8px}
+.tmr-adj{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.tmr-adj .btn{min-height:44px}
+.tmr-mode{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.tmr-mode .btn{min-height:44px}
 .rest-tmr .tmr{background:transparent;border:0;padding:0}
 .rest-tmr .tmr-main{flex-direction:column;align-items:stretch;gap:12px}
 .rest-tmr .tmr-label{display:none}
@@ -788,3 +792,9 @@ body:is([data-skin="bunny"],[data-skin="lanai"]) .chips.day-tiles button[aria-pr
 .day-tiles button{position:relative}
 .day-tiles .today-dot{position:absolute;bottom:4px;font:700 .625rem var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--accent-text)}
 .chips.day-tiles button{height:80px}
+
+/* iPhone: while typing, the keyboard can leave the fixed tab bar stranded mid-screen. Hide it while a field
+   has focus; it comes back (pinned to the bottom) when the keyboard closes. */
+body.kb-open nav.tabs{display:none}
+body.kb-open{padding-bottom:16px}
+nav.tabs{transform:translateZ(0)}
