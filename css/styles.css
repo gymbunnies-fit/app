@@ -392,15 +392,12 @@ body[data-skin="clean"] h1,body[data-skin="clean"] .h2,body[data-skin="clean"] .
 .brand-logo.small .brand-mark{width:52px;height:40px}
 .brand-logo .brand-name{font:700 clamp(1.9rem,9vw,2.6rem)/1.1 var(--display);color:var(--ink);letter-spacing:-.01em}
 .brand-logo.small .brand-name{font-size:1.6rem}
-.brand-logo .on-dark{display:none}
-body[data-tone="dark"] .brand-logo .on-light{display:none}
-body[data-tone="dark"] .brand-logo .on-dark{display:block}
 .visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
 /* --- Bunny (redesign, Oct 2026): charcoal and hot pink, Cormorant Garamond titles and big numbers, Hanken Grotesk text.
    Pink means "now" or "you won": one filled pink control per screen. */
 body[data-skin="bunny"]{
-  --bg:#211f1f; --surface:#2c2929; --inset:#373333; --ink:#f7f1f3; --muted:#c4b9be;
+  --bg:#201f1d; --surface:#2c2929; --inset:#373333; --ink:#f7f1f3; --muted:#c4b9be;
   --line:#5a5254; --hair:#443e40;
   --accent:#fb40ad; --on-accent:#1a1818; --accent-soft:rgba(251,64,173,.12); --accent-text:#ff7cc6; /* pink for small text: 5.2:1+ on every surface */
   --plate:#fb40ad; --plate-soft:rgba(251,64,173,.14);
@@ -411,7 +408,7 @@ body[data-skin="bunny"]{
   --display:"Cormorant Garamond",Georgia,serif; --body:"Hanken Grotesk",system-ui,sans-serif; --num:var(--display);
   --radius:22px; --glow:0 0 18px rgba(251,64,173,.7); --card-shadow:none;
   --stripe:linear-gradient(90deg,#fb40ad,#ff8fcf 60%,#fb40ad);
-  color-scheme:dark; background:#211f1f;
+  color-scheme:dark; background:#201f1d;
 }
 body[data-skin="bunny"] h1,body[data-skin="bunny"] .h2,body[data-skin="bunny"] .h3,body[data-skin="bunny"] .pick h2,body[data-skin="bunny"] .signin h2{font-family:var(--display);font-style:italic;font-weight:600;text-transform:none;letter-spacing:0}
 body[data-skin="bunny"] .h2{font-size:2.375rem;line-height:1}
@@ -826,3 +823,13 @@ nav.tabs{transform:translateZ(0)}
 .ob-list{display:grid;gap:10px;padding-left:18px;margin:0}
 .tailor-note{color:var(--accent-text);margin:6px 0 0}
 .ob-sum p{margin:4px 0}
+
+/* Brand logos (GymBunnies.fit brand kit v1): dark version on dark themes, light version on light themes. */
+.brand-h1{margin:0;line-height:0;display:flex;align-items:center;min-width:0}
+.logo-line{height:42px;width:auto;max-width:100%}
+.on-light{display:none}
+body[data-tone="light"] .on-light{display:block}
+body[data-tone="light"] .on-dark{display:none}
+.brand-logo{display:grid;justify-items:center;margin:0 auto}
+.brand-logo img{width:min(300px,78vw);height:auto}
+.brand-logo.small img{width:min(220px,62vw)}

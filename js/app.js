@@ -4,7 +4,7 @@ import * as F from "./fun.js";
 import * as T from "./timer.js";
 import * as A from "./a11y.js";
 import * as TL from "./tailor.js";
-import { icon, play, ears } from "./icons.js";
+import { icon, play } from "./icons.js";
 import { safetyFor } from "./safety.js";
 import * as S from "./stats.js";
 import { BUILTIN, GYM, EQUIP, PATTERN, JOINTS, POSITION, LEVEL, PLAN_PATTERN, PLAN_MACHINES, STRETCH_BY_FOCUS, normalizeLib } from "./library.js";
@@ -13,7 +13,7 @@ import { connect, save, remove, patch, dropField, signOutAndClear, importAll, CO
 
 // ---------------------------------------------------------------- helpers
 // Shown at the bottom of Settings so you can tell whether a phone has the latest update. Bump with sw.js VERSION.
-const APP_VERSION = "29";
+const APP_VERSION = "30";
 // The app's name lives here only (plus manifest.webmanifest and the <title> tags in index.html, which can't read JS).
 const APP_NAME = "GymBunnies.fit";
 const $ = (s, r = document) => r.querySelector(s);
@@ -2234,8 +2234,8 @@ function viewSignIn() {
   </section>`;
 }
 function logoHtml(size = "") {
-  // Placeholder until the new sign-in logo is ready: the bunny ears and the name.
-  return `<div class="brand-logo wordmark ${size}">${ears(size === "small" ? 44 : 64, size === "small" ? 34 : 50)}<span class="brand-name">${APP_NAME}</span></div>`;
+  // The primary logo: the version for dark backgrounds on dark themes, and for light backgrounds on light ones.
+  return `<div class="brand-logo ${size}"><img class="on-dark" src="icons/logo-primary-dark.svg" alt="${APP_NAME}"><img class="on-light" src="icons/logo-primary-light.svg" alt="${APP_NAME}"></div>`;
 }
 function viewCrewSetup() {
   const a = state.auth;
@@ -2276,7 +2276,7 @@ function accountCard() {
   </section>`;
 }
 
-$("#app-name").textContent = APP_NAME;
+
 render();
 if ("serviceWorker" in navigator) {
   const hadController = !!navigator.serviceWorker.controller;
