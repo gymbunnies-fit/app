@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Account · GymBunnies.fit</title>
+  <meta name="theme-color" content="#211f1f">
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="icons/favicon-64.png">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;1,600&family=Hanken+Grotesk:wght@400;600;700&display=swap">
+  <link rel="stylesheet" href="css/styles.css">
+  <style>
+    body{padding:0}
+    .act{max-width:440px;margin:0 auto;padding:calc(env(safe-area-inset-top,0px) + 32px) 16px 40px;display:grid;gap:18px}
+    .act .brand-logo{margin-bottom:4px}
+    .act h1{font:600 1.7rem/1.2 var(--display);margin:0}
+    .act form{display:grid;gap:14px}
+    .act .err{color:var(--bad, #ff8a8a);font-weight:600}
+  </style>
+</head>
+<body data-skin="bunny" data-tone="dark">
+  <main class="act" id="main">
+    <div class="brand-logo wordmark small">
+      <svg class="brand-mark" width="52" height="40" viewBox="0 0 90 70" fill="none" stroke="#fb40ad" stroke-width="4" stroke-linecap="round" aria-hidden="true"><path d="M36 68 C22 46 20 14 30 4 C40 14 44 44 42 68"/><path d="M48 68 C48 44 52 16 64 8 C72 20 64 48 54 68"/></svg>
+      <span class="brand-name">GymBunnies.fit</span>
+    </div>
+    <section class="card" id="box" aria-live="polite"><p class="muted">One moment…</p></section>
+  </main>
+  <script type="module">
+    // Handles the links in account emails (password reset, email check, email change undo) on our own domain.
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getAuth, verifyPasswordResetCode, confirmPasswordReset, applyActionCode, checkActionCode } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+    const auth = getAuth(initializeApp({
+      apiKey: "AIzaSyAm5Mnk4z1NTrIBCJ1k5WI8la2xQ2HtJ-k",
+      authDomain: "fitness-for-faggy-bunnies.firebaseapp.com",
+      projectId: "fitness-for-faggy-bunnies",
+      appId: "1:1064959793157:web:89f913163da3631ab5646c"
+    }));
+    const q = new URLSearchParams(location.search);
+    const mode = q.get("mode"), code = q.get("oobCode");
+    const box = document.getElementById("box");
+    const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const home = `<a class="btn primary block" href="./">Open GymBunnies.fit</a>`;
+    const show = (title, body) => { box.innerHTML = `<h1>${title}</h1>${body}`; box.querySelector("h1").focus?.(); };
+    const expired = () => show("This link has expired", `<p>It was already used, or it's too old. Go back to the app and ask for a new email.</p>${home}`);
+
+    async function reset() {
+      let email;
+      try { email = await verifyPasswordResetCode(auth, code); } catch { return expired(); }
+      show("Choose a new password", `<p>For <b>${esc(email)}</b>.</p>
+        <form id="f">
+          <label class="field">New password<input type="password" id="p1" autocomplete="new-password" minlength="6" required></label>
+          <label class="field">Type it again<input type="password" id="p2" autocomplete="new-password" minlength="6" required></label>
+          <p class="err" id="err" role="alert"></p>
+          <button class="btn primary block" type="submit">Save new password</button>
+        </form>`);
+      document.getElementById("f").addEventListener("submit", async e => {
+        e.preventDefault();
+        const p1 = document.getElementById("p1").value, p2 = document.getElementById("p2").value, err = document.getElementById("err");
+        if (p1.length < 6) { err.textContent = "Use at least 6 characters."; return; }
+        if (p1 !== p2) { err.textContent = "Those don't match. Try again."; return; }
+        try { await confirmPasswordReset(auth, code, p1); show("Password saved", `<p>Sign in with your new password.</p>${home}`); }
+        catch (x) { if (/weak-password/.test(x.code)) err.textContent = "That password is too weak. Try a longer one."; else expired(); }
+      });
+    }
+    async function verify() {
+      try { await applyActionCode(auth, code); show("Email confirmed", `<p>You're all set.</p>${home}`); } catch { expired(); }
+    }
+    async function recover() {
+      try {
+        const info = await checkActionCode(auth, code); await applyActionCode(auth, code);
+        show("Email change undone", `<p>Your sign-in email is back to <b>${esc(info.data.email)}</b>. If you didn't ask for that change, reset your password from the sign-in screen.</p>${home}`);
+      } catch { expired(); }
+    }
+    if (!code) show("Nothing to do here", home);
+    else if (mode === "resetPassword") reset();
+    else if (mode === "verifyEmail") verify();
+    else if (mode === "recoverEmail") recover();
+    else expired();
+  </script>
+</body>
+</html>
