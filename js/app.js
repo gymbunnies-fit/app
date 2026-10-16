@@ -13,7 +13,7 @@ import { connect, save, remove, patch, dropField, signOutAndClear, importAll, CO
 
 // ---------------------------------------------------------------- helpers
 // Shown at the bottom of Settings so you can tell whether a phone has the latest update. Bump with sw.js VERSION.
-const APP_VERSION = "31";
+const APP_VERSION = "32";
 // The app's name lives here only (plus manifest.webmanifest and the <title> tags in index.html, which can't read JS).
 const APP_NAME = "GymBunnies.fit";
 const $ = (s, r = document) => r.querySelector(s);
@@ -356,7 +356,7 @@ function render() {
   const views = { today: viewToday, progress: viewProgress, body: viewBody, crew: viewCrew, gym: viewGym };
   main.innerHTML = banner + views[state.view]();
   afterRender();
-  document.title = `${VIEW_NAMES[state.view] || ""} · ${APP_NAME}`;
+  document.title = APP_NAME; // the page name stays the brand, so shared links read "GymBunnies.fit"
   A.restoreFocus(main);
 }
 const VIEW_NAMES = { today: "Workout", progress: "Progress", body: "Body", crew: "Crew", gym: "Gym" };
@@ -1251,6 +1251,13 @@ function finishOnboarding() {
   toast(o.id ? "Your plan is updated." : `Welcome, ${name}! Your plan is ready.`); render();
 }
 
+// Share the plain site address (not the page you're on), so Messages builds the brand preview card.
+const SITE_URL = "https://gymbunnies.fit/";
+function shareLink(title, text) {
+  if (navigator.share) { navigator.share({ title, text, url: SITE_URL }).catch(() => {}); return; }
+  const all = `${text} ${SITE_URL}`;
+  navigator.clipboard?.writeText(all).then(() => toast("Copied. Paste it into a message."), () => toast(all));
+}
 // ---------------------------------------------------------------- settings
 function openSettings() {
   state.overlay = "settings";
@@ -1265,6 +1272,9 @@ function openSettings() {
       <p class="small">${a11yOn() ? `${a11yOn()} option${a11yOn() === 1 ? "" : "s"} changed.` : "Text size, contrast, reading fonts, spoken timers, screen flashes, one-step-at-a-time, and more."}</p>
       <button class="btn primary" data-act="openA11y">Accessibility options</button></section>
     ${crewSettings()}
+    <section class="card"><h3 class="h3">Share GymBunnies.fit</h3>
+      <p class="small">Sends the link with the GymBunnies.fit preview card. Use this instead of the browser's share button, which sends a picture of your screen.</p>
+      <button class="btn primary small" data-act="shareApp">Share the app</button></section>
     <section class="card"><h3 class="h3">Your plan</h3>
       <p class="small">${p.onboardedAt ? `Tailored from your questionnaire: ${p.daysPerWeek || 4} day${(p.daysPerWeek || 4) === 1 ? "" : "s"} a week${(p.tailorList || []).length ? `, ${p.tailorList.length} exercise${p.tailorList.length === 1 ? "" : "s"} adjusted for you` : ""}.` : "Answer a few questions about your goals, injuries, and schedule, and the plan adjusts to fit you."}</p>
       <div class="row"><button class="btn primary small" data-act="obRetake">${p.onboardedAt ? "Retake the questionnaire" : "Tailor my plan"}</button>${(p.tailorList || []).length ? `<button class="btn small" data-act="tailorOff">Use the standard plan</button>` : ""}</div></section>
@@ -1853,6 +1863,8 @@ document.addEventListener("click", e => {
     }
     case "crewJoin": { const code = $("#crew-code").value; const u = state.auth.user; busy(async () => { const id = await joinCrew(code, { uid: u.uid, name: u.name || u.email.split("@")[0], email: u.email }); startCrew(id); }); break; }
     case "crewCreate": { const name = $("#crew-name").value.trim() || "Our crew"; const u = state.auth.user; busy(async () => { const r = await createCrew(name, { uid: u.uid, name: u.name || u.email.split("@")[0], email: u.email, profileId: state.user || "" }); startCrew(r.id); patch("settings", "app", { cycleStart: S.mondayOf(TODAY()) }); }); break; }
+    case "shareApp": shareLink("GymBunnies.fit", "Check out GymBunnies.fit, the workout app we made."); break;
+    case "shareInvite": { const c = state.auth.crew?.code || ""; shareLink("Join my crew on GymBunnies.fit", `Join my crew on GymBunnies.fit! Sign in, then enter this invite code: ${c}`); break; }
     case "copyCode": { const c = state.auth.crew?.code || ""; navigator.clipboard?.writeText(c).then(() => toast("Invite code copied."), () => toast(c)); break; }
     case "newCode": newInviteCode(state.auth.crewId, state.auth.crew?.code).then(c => { toast(`New code: ${c}. The old one no longer works.`); openSettings(); }, e => toast(e.message)); break;
     case "crewRemove": { const uid = el.dataset.v; if (state.confirmDel !== uid) { state.confirmDel = uid; openSettings(); break; } state.confirmDel = null; removeMember(state.auth.crewId, uid).then(() => { toast("Removed from the crew."); openSettings(); }, e => toast(e.message)); break; }
@@ -2260,7 +2272,7 @@ function crewCard() {
   return `<section class="card"><h3 class="h3">Crew members and invite code</h3>
     ${owner ? `<label class="field">Crew name<input type="text" data-act="crewRename" value="${esc(a.crew?.name || "")}"></label>` : `<p><b>${esc(a.crew?.name || "")}</b></p>`}
     <div class="field"><span>Invite code (share it with new members)</span>
-      <div class="row"><b class="mono" style="font-size:1.5rem;letter-spacing:.2em" id="invite-code">${esc(a.crew?.code || "")}</b><button class="btn small" data-act="copyCode">Copy</button>${owner ? `<button class="btn small" data-act="newCode">New code</button>` : ""}</div></div>
+      <div class="row"><b class="mono" style="font-size:1.5rem;letter-spacing:.2em" id="invite-code">${esc(a.crew?.code || "")}</b><button class="btn small" data-act="copyCode">Copy</button><button class="btn small primary" data-act="shareInvite">Send invite</button>${owner ? `<button class="btn small" data-act="newCode">New code</button>` : ""}</div></div>
     <div class="field"><span>Members and their sign-in emails</span>
       ${a.members.map(m => `<div class="list-item"><div>${m.profileId ? avatarHtml(m.profileId) : ""}<b>${esc(m.name || "Member")}</b>${m.role === "owner" ? ` <span class="tag orig">Owner</span>` : ""}<div class="small muted">${esc(m.email)}${m.profileId ? ` · profile: ${esc(P(m.profileId).name)}` : " · no profile picked yet"}</div></div>
         ${owner && m.uid !== a.user.uid ? `<button class="btn small danger" data-act="crewRemove" data-v="${esc(m.uid)}">${state.confirmDel === m.uid ? "Confirm" : "Remove"}</button>` : ""}</div>`).join("")}</div>
