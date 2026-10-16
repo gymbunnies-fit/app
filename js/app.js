@@ -12,7 +12,7 @@ import { connect, save, remove, patch, dropField, signOutAndClear, importAll, CO
 
 // ---------------------------------------------------------------- helpers
 // Shown at the bottom of Settings so you can tell whether a phone has the latest update. Bump with sw.js VERSION.
-const APP_VERSION = "27";
+const APP_VERSION = "28";
 // The app's name lives here only (plus manifest.webmanifest and the <title> tags in index.html, which can't read JS).
 const APP_NAME = "GymBunnies.fit";
 const $ = (s, r = document) => r.querySelector(s);
@@ -313,7 +313,6 @@ function render() {
     main.innerHTML = `<section class="pick">${logoHtml("small")}<h2>Who's training?</h2>
       <div class="pick-people">${profileIds().map(id => `<button class="btn person" data-act="pickUser" data-u="${id}">${avatarHtml(id, true)}<span>${esc(P(id).name)}</span></button>`).join("")}</div>
       <button class="btn" data-act="newProfile">+ New person</button>
-      ${isOwner() && !state.data.sessions.length ? `<button class="btn small" data-act="legacyQuick">Bring over data from the first version</button>` : ""}
       <p class="muted small">You can switch any time from the name button at the top.</p>
       <button class="btn small" data-act="openA11y"><span aria-hidden="true">♿</span> Accessibility options</button></section>`;
     return;
@@ -1720,7 +1719,7 @@ document.addEventListener("click", e => {
       signOutAndClear().finally(() => location.reload()); break;
     }
     case "crewJoin": { const code = $("#crew-code").value; const u = state.auth.user; busy(async () => { const id = await joinCrew(code, { uid: u.uid, name: u.name || u.email.split("@")[0], email: u.email }); startCrew(id); }); break; }
-    case "crewCreate": { const name = $("#crew-name").value.trim() || "Our crew"; const u = state.auth.user; busy(async () => { const r = await createCrew(name, { uid: u.uid, name: u.name || u.email.split("@")[0], email: u.email, profileId: state.user || "" }); startCrew(r.id); }); break; }
+    case "crewCreate": { const name = $("#crew-name").value.trim() || "Our crew"; const u = state.auth.user; busy(async () => { const r = await createCrew(name, { uid: u.uid, name: u.name || u.email.split("@")[0], email: u.email, profileId: state.user || "" }); startCrew(r.id); patch("settings", "app", { cycleStart: S.mondayOf(TODAY()) }); }); break; }
     case "copyCode": { const c = state.auth.crew?.code || ""; navigator.clipboard?.writeText(c).then(() => toast("Invite code copied."), () => toast(c)); break; }
     case "newCode": newInviteCode(state.auth.crewId, state.auth.crew?.code).then(c => { toast(`New code: ${c}. The old one no longer works.`); openSettings(); }, e => toast(e.message)); break;
     case "crewRemove": { const uid = el.dataset.v; if (state.confirmDel !== uid) { state.confirmDel = uid; openSettings(); break; } state.confirmDel = null; removeMember(state.auth.crewId, uid).then(() => { toast("Removed from the crew."); openSettings(); }, e => toast(e.message)); break; }
@@ -2126,9 +2125,6 @@ function crewCard() {
     <div class="field"><span>Members and their sign-in emails</span>
       ${a.members.map(m => `<div class="list-item"><div>${m.profileId ? avatarHtml(m.profileId) : ""}<b>${esc(m.name || "Member")}</b>${m.role === "owner" ? ` <span class="tag orig">Owner</span>` : ""}<div class="small muted">${esc(m.email)}${m.profileId ? ` · profile: ${esc(P(m.profileId).name)}` : " · no profile picked yet"}</div></div>
         ${owner && m.uid !== a.user.uid ? `<button class="btn small danger" data-act="crewRemove" data-v="${esc(m.uid)}">${state.confirmDel === m.uid ? "Confirm" : "Remove"}</button>` : ""}</div>`).join("")}</div>
-    ${owner ? `<details class="more" ${a.legacy ? "open" : ""}><summary>Bring over data from the first version</summary><div class="panel small">
-      <p>Copies the workouts, body entries, library, profiles, and settings saved before crews existed into this crew. Run it once.</p>
-      ${a.legacy ? `<p><b>${a.legacy.count}</b> items found.</p><button class="btn primary" data-act="legacyCopy">Copy ${a.legacy.count} item${a.legacy.count === 1 ? "" : "s"} into this crew</button>` : `<button class="btn" data-act="legacyCheck">Look for old data</button>`}</div></details>` : ""}
   </section>`;
 }
 function accountCard() {
