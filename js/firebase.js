@@ -12,12 +12,12 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAm5Mnk4z1NTrIBCJ1k5WI8la2xQ2HtJ-k",
-  authDomain: "fitness-for-faggy-bunnies.firebaseapp.com",
-  projectId: "fitness-for-faggy-bunnies",
-  storageBucket: "fitness-for-faggy-bunnies.firebasestorage.app",
-  messagingSenderId: "1064959793157",
-  appId: "1:1064959793157:web:89f913163da3631ab5646c"
+  apiKey: "AIzaSyC1RgJvqEyg8-HvVvNmQrSQkUnpPIkIG5k",
+  authDomain: "gymbunnies-fit.firebaseapp.com",
+  projectId: "gymbunnies-fit",
+  storageBucket: "gymbunnies-fit.firebasestorage.app",
+  messagingSenderId: "940175627423",
+  appId: "1:940175627423:web:81eff9c543377c4ec1beaa"
 };
 
 const app = initializeApp(firebaseConfig);
