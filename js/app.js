@@ -5,6 +5,7 @@ import * as T from "./timer.js";
 import * as A from "./a11y.js";
 import * as TL from "./tailor.js";
 import * as PG from "./program.js";
+import * as ST from "./stretch.js";
 import { icon, play } from "./icons.js";
 import { safetyFor } from "./safety.js";
 import * as S from "./stats.js";
@@ -14,7 +15,7 @@ import { connect, save, remove, patch, dropField, signOutAndClear, importAll, CO
 
 // ---------------------------------------------------------------- helpers
 // Shown at the bottom of Settings so you can tell whether a phone has the latest update. Bump with sw.js VERSION.
-const APP_VERSION = "34";
+const APP_VERSION = "35";
 // The app's name lives here only (plus manifest.webmanifest and the <title> tags in index.html, which can't read JS).
 const APP_NAME = "GymBunnies.fit";
 const $ = (s, r = document) => r.querySelector(s);
@@ -185,7 +186,7 @@ const state = {
 };
 state.partnerId = store.get("twp-partner-id", null);
 if (state.view === "report") { state.view = "progress"; state.progTab = "report"; }
-if (!["today", "progress", "body", "crew", "gym"].includes(state.view)) state.view = "today";
+if (!["today", "progress", "body", "crew", "gym", "stretch"].includes(state.view)) state.view = "today";
 Object.keys(localStorage).filter(k => k.startsWith("twp-draft-")).forEach(k => store.del(k)); // old whole-workout drafts
 
 const cycleStart = () => state.data.settings.find(s => s.id === "app")?.cycleStart || "2026-09-28";
@@ -411,13 +412,13 @@ function render() {
   }
   if (!state.viewUser || !profileIds().includes(state.viewUser) || !canSee(state.viewUser)) state.viewUser = state.user;
   const banner = state.error ? `<div class="banner" role="alert">${esc(state.error)}</div>` : "";
-  const views = { today: viewToday, progress: viewProgress, body: viewBody, crew: viewCrew, gym: viewGym };
+  const views = { today: viewToday, progress: viewProgress, body: viewBody, crew: viewCrew, gym: viewGym, stretch: viewStretch };
   main.innerHTML = banner + views[state.view]();
   afterRender();
   document.title = APP_NAME; // the page name stays the brand, so shared links read "GymBunnies.fit"
   A.restoreFocus(main);
 }
-const VIEW_NAMES = { today: "Workout", progress: "Progress", body: "Body", crew: "Crew", gym: "Gym" };
+const VIEW_NAMES = { today: "Workout", progress: "Progress", body: "Body", crew: "Crew", gym: "Exercise library", stretch: "Stretch" };
 
 // How much of someone's progress the rest of the crew sees: all | trained | none. You always see your own.
 const shareOf = id => P(id).share || "all";
@@ -784,7 +785,7 @@ function drawLibSwap() {
   $("#overlay").innerHTML = `<div class="overlay" role="dialog" aria-label="Pick from the library"><div class="inner">
     <div class="between"><h2 class="h2">Pick from the library</h2><button class="btn small" data-act="closeOverlay">Close</button></div>
     <p class="muted">Instead of <b>${esc(ex.n)}</b>${pattern ? ` (${esc(PATTERN[pattern].toLowerCase())})` : ""}, which works ${esc(listText(ex.focus.filter(f => FOCUS[f]).map(f => FOCUS[f].toLowerCase())))}. Same target: ${esc(ex.sr)}. Best matches first.</p>
-    ${aches(u).length ? `<p class="small">Sore today: ${esc(aches(u).map(j => JOINTS[j]).join(", "))}. Change this on the Gym tab.</p>` : ""}
+    ${aches(u).length ? `<p class="small">Sore today: ${esc(aches(u).map(j => JOINTS[j]).join(", "))}. Change this in the exercise library (Settings).</p>` : ""}
     <section class="card"><div class="pick-list">${ok.length ? ok.map(btn).join("") : `<p class="muted small">No matches in the library yet.</p>`}</div></section>
     ${sore.length ? `<section class="card"><h3 class="h3">Hard on your sore areas</h3><div class="pick-list">${sore.map(btn).join("")}</div></section>` : ""}
   </div></div>`;
@@ -834,8 +835,8 @@ function viewGym() {
   const hidden = hiddenBuiltins();
   const quick = Object.values(ALL_EX).filter(e => /machine|cable|smith|pulldown|pec|deck|press \(|leg press|captain|row machine|torso/i.test(e.n) && !all.some(m => m.name.toLowerCase() === e.n.toLowerCase()));
   const seen = new Set(); const quickU = quick.filter(e => !seen.has(e.n) && seen.add(e.n));
-  return `<section class="card">
-    <div class="between"><h2 class="h2">Gym library</h2>${personToggle()}</div>
+  return `<div class="row"><button type="button" class="btn small" data-act="libDone">${icon("chevron", 16, { stroke: 2 })}<span>Back to your workout</span></button></div><section class="card">
+    <div class="between"><h2 class="h2">Exercise library</h2>${personToggle()}</div>
     <p class="small muted">${all.length} exercises. ${esc(GYM.name)} dumbbells go to about ${GYM.maxDumbbell} lb. Swaps and "Add an exercise" pull from here.</p>
     ${ap ? `<div class="banner">Adding to ${ap.who === "both" ? "both plans" : PROFILES[ap.who].name + "'s plan"}: tap <b>Add to plan</b> on any exercise. <button class="btn small" data-act="apCancel">Cancel</button></div>` : ""}
     <label class="field">Search<input type="text" id="lib-q" data-act="libQ" value="${esc(F.q)}" placeholder="Row, lunge, press…" autocomplete="off"></label>
@@ -1202,7 +1203,7 @@ function drawProfileForm(p) {
       <label class="field">What do you want out of training?<textarea id="pf-goals" placeholder="Lose fat around the middle, get stronger, better cardio…">${esc(p.focusNote || "")}</textarea></label>
       <div class="field"><span>Focus areas</span>${chipSet("focus", [...GROUPS.filter(g => g !== "cardio").map(g => [g, FOCUS[g]]), ["full", "Full body"], ["cardio", "Cardio fitness"]])}</div></section>
     <section class="card"><h3 class="h3">Aches and injuries</h3>
-      <p class="small muted">Areas to track in the daily pain check. You can mark what's sore on any given day from the Gym tab.</p>
+      <p class="small muted">Areas to track in the daily pain check. You can mark what's sore on any given day in the exercise library (Settings).</p>
       ${chipSet("pain", Object.entries(PAIN_AREAS))}</section>
     <section class="card"><h3 class="h3">Training style</h3>
       <div class="field"><span>Default exercise version</span>${one("defaultVariant", [["std", "Standard"], ["hard", "Harder"]])}</div>
@@ -1328,6 +1329,120 @@ function shareLink(title, text) {
   const all = `${text} ${SITE_URL}`;
   navigator.clipboard?.writeText(all).then(() => toast("Copied. Paste it into a message."), () => toast(all));
 }
+// ---------------------------------------------------------------- stretch tab
+// Short stretching routines, not tied to days or the cycle. Logged as "Stretch" activities: they never count
+// as a workout, a plan day, or a bonus day.
+function strState() { if (!state.str) state.str = { minutes: store.get("twp-str-min", 10), pick: null, areas: [], run: null, finished: null }; return state.str; }
+const strProf = u => ({ injuries: P(u).injuries || [], limits: P(u).limits || [] });
+// The muscles from today's logged workout, or else the next plan day.
+function strTodayAreas(u) {
+  const t = TODAY();
+  let focus = state.data.sessions.filter(s => s.user === u && s.date === t).flatMap(s => s.exercises || []).filter(e => e.sets?.length).map(e => resolveEx(e.id, e)?.focus?.[0]).filter(Boolean);
+  let label = "Cools down what you trained today.";
+  if (!focus.length && nextPlanDay().complete) {
+    const last = state.data.sessions.filter(x => x.user === u && (x.exercises || []).some(e => e.sets?.length)).sort((a, b) => b.date.localeCompare(a.date))[0];
+    focus = (last?.exercises || []).map(e => resolveEx(e.id, e)?.focus?.[0]).filter(Boolean);
+    if (focus.length) label = "Cools down your last workout.";
+  }
+  if (!focus.length) {
+    const n = nextPlanDay(), pd = planDay(u, n.week, n.day);
+    focus = pd.ex.map(e => e.focus?.[0]).filter(Boolean);
+    label = `For ${dayName(n.day)} (${pd.title.split(",")[0].toLowerCase()}), before or after.`;
+  }
+  return { areas: [...new Set(focus.flatMap(f => ST.FROM_FOCUS[f] || []))], label };
+}
+// Sore spots: marked sore in the exercise library, a pain score of 2+ in the latest check-in, or an injury from the questionnaire.
+function strSoreAreas(u) {
+  const last = state.data.sessions.filter(s => s.user === u && s.pain).sort((a, b) => b.date.localeCompare(a.date))[0];
+  const spots = [...new Set([...aches(u), ...Object.entries(last?.pain || {}).filter(([, v]) => +v >= 2).map(([k]) => k), ...(P(u).injuries || [])])];
+  return { spots, areas: [...new Set(spots.flatMap(k => ST.FROM_PAIN[k] || []))] };
+}
+const strLog = u => state.data.activities.filter(a => a.user === u && a.type === "Stretch");
+function strStats(u) {
+  const log = strLog(u), mon = S.mondayOf(TODAY());
+  const minutes = Math.round(log.filter(a => a.date >= mon).reduce((n, a) => n + (+a.minutes || 0), 0));
+  const days = new Set(log.map(a => a.date)); let streak = 0, d = days.has(TODAY()) ? TODAY() : S.addDays(TODAY(), -1);
+  while (days.has(d)) { streak++; d = S.addDays(d, -1); }
+  return { minutes, streak, total: log.length };
+}
+function strRoutine(u) {
+  const st = strState(); const id = st.pick;
+  const areas = id === "today" ? strTodayAreas(u).areas : id === "sore" ? strSoreAreas(u).areas : id === "area" ? st.areas : [];
+  return ST.buildRoutine(id, { minutes: st.minutes, areas, prof: strProf(u) });
+}
+function viewStretch() {
+  const u = state.user, st = strState();
+  if (st.run) return viewStretchRun(u);
+  if (st.finished) return `<section class="card str-done" aria-labelledby="sd-h"><h2 class="h2" id="sd-h" tabindex="-1">Nice stretching.</h2>
+    <p>${st.finished.minutes} minute${st.finished.minutes === 1 ? "" : "s"} of ${esc(st.finished.title.toLowerCase())}.</p>
+    <div class="field"><span id="sd-f">How do you feel?</span><div class="seg" role="group" aria-labelledby="sd-f">${[["tight", "Still tight"], ["okay", "Okay"], ["loose", "Loose"]].map(([k, l]) => `<button type="button" data-act="strFeel" data-v="${k}" aria-pressed="${st.finished.feel === k}">${l}</button>`).join("")}</div></div>
+    <button class="btn primary block" data-act="strHome">Done</button></section>`;
+  const seg3 = `<div class="field"><span id="str-len">How long?</span><div class="seg" role="group" aria-labelledby="str-len">${[5, 10, 15].map(m => `<button type="button" data-act="strMin" data-v="${m}" aria-pressed="${st.minutes === m}">${m} min</button>`).join("")}</div></div>`;
+  if (st.pick) {
+    const r = strRoutine(u), R = ST.ROUTINES[st.pick];
+    const sore = st.pick === "sore" ? strSoreAreas(u) : null;
+    return `<section aria-labelledby="sp-h"><button type="button" class="btn small" data-act="strBack">${icon("chevron", 16, { stroke: 2 })}<span>All routines</span></button>
+      <h2 class="h2" id="sp-h" tabindex="-1" style="margin-top:12px">${esc(r.title)}</h2>
+      <p class="muted">${esc(R.blurb)}${sore ? (sore.spots.length ? ` Built around: ${esc(listText(sore.spots.map(k => (PAIN_AREAS[k] || JOINTS[k] || k).toLowerCase())))}.` : " Nothing's marked sore, so this is a gentle full-body stretch. Mark sore spots in your daily check-in.") : ""}</p>
+      ${st.pick === "area" ? `<div class="field"><span id="sa-l">Which areas?</span><div class="focus-chips ob-chips" role="group" aria-labelledby="sa-l">${Object.entries(ST.AREAS).map(([k, l]) => `<button type="button" data-act="strArea" data-v="${k}" aria-pressed="${st.areas.includes(k)}">${esc(l)}</button>`).join("")}</div></div>` : ""}
+      ${seg3}
+      ${r.items.length ? `<p class="small"><b>${r.items.length} stretches · about ${Math.max(1, Math.round(r.seconds / 60))} min</b></p>
+      <ol class="str-list">${r.items.map((o, i) => { const s = ST.BY_KEY[o.key]; return `<li class="card str-item"><div class="str-n big-num" aria-hidden="true">${i + 1}</div><div class="str-b"><b>${esc(s.n)}</b><div class="small str-dose">${esc(ST.doseText(s, o.rounds, o.hold))}</div><div class="small muted">Feel it: ${esc(s.feel)}</div>
+        <details class="more sub"><summary>How to do it</summary><div class="panel small"><p>${esc(s.how)}</p><p><b>What it does:</b> ${esc(s.does)}</p></div></details></div></li>`; }).join("")}</ol>
+      <button class="btn primary block" data-act="strStart">${play()}<span>Start guided</span></button>
+      <p class="small muted">Ease in until you feel mild tension, never pain. Breathe slowly and don't bounce. The timer runs each hold and beeps when it's time to switch.</p>`
+      : `<p>${st.pick === "area" ? "Pick at least one area above." : "No stretches fit your limits for this routine. Try another one."}</p>`}
+    </section>`;
+  }
+  const s = strStats(u), today = strTodayAreas(u), sore = strSoreAreas(u);
+  const card = (id, sub, extra = "") => `<button type="button" class="card routine ${extra}" data-act="strPick" data-v="${id}"><b>${esc(ST.ROUTINES[id].title)}</b><span class="small muted">${esc(sub || ST.ROUTINES[id].blurb)}</span></button>`;
+  return `<section aria-labelledby="str-h"><h2 class="h2" id="str-h">Stretch</h2>
+    <div class="stats"><div class="stat"><div class="v">${s.minutes}</div><div class="l">Minutes this week</div></div><div class="stat"><div class="v">${s.streak}</div><div class="l">Day streak</div></div></div>
+    ${seg3}
+    <div class="routines">${card("today", today.label, "featured")}${card("morning")}${card("desk")}${card("bedtime")}${card("sore", sore.spots.length ? `Built around your ${listText(sore.spots.map(k => (PAIN_AREAS[k] || JOINTS[k] || k).toLowerCase()))}.` : "")}${card("full")}${card("area")}</div>
+    <p class="small muted">Stretching is tracked on its own. It doesn't count as a workout or a bonus day.</p></section>`;
+}
+function viewStretchRun(u) {
+  const run = strState().run, step = run.steps[run.i], s = ST.BY_KEY[step.key], nextStep = run.steps.slice(run.i + 1).find(x => x.item !== step.item);
+  const label = `${s.n}${step.side ? ", " + step.side.toLowerCase() : ""}`;
+  return `<section class="str-run" aria-labelledby="sr-h">
+    <div class="between"><span class="eyebrow">Stretch ${step.item + 1} of ${run.count}</span><button class="btn small" data-act="strEnd">End</button></div>
+    <div class="ob-progress" role="progressbar" aria-label="Routine progress" aria-valuemin="0" aria-valuemax="${run.steps.length}" aria-valuenow="${run.i}"><i style="width:${(run.i / run.steps.length) * 100}%"></i></div>
+    <h2 class="h2" id="sr-h" tabindex="-1">${esc(s.n)}</h2>
+    <p class="str-side"><b>${esc([step.side, step.rounds > 1 ? `Round ${step.round} of ${step.rounds}` : "", step.cue].filter(Boolean).join(" · "))}</b></p>
+    ${T.html("stretch", step.seconds, label)}
+    <p>${esc(s.how)}</p><p class="small"><b>Feel it:</b> ${esc(s.feel)}</p>
+    <div class="row"><button class="btn" data-act="strPrev" ${run.i ? "" : "disabled"}>Back</button><button class="btn" data-act="strNext">Skip</button></div>
+    ${nextStep ? `<p class="small muted">Up next: ${esc(ST.BY_KEY[nextStep.key].n)}</p>` : `<p class="small muted">Last one.</p>`}
+  </section>`;
+}
+// Starts the current step's timer and says what it is (spoken when spoken cues are on).
+function strGo() {
+  const run = strState().run; if (!run) return;
+  const step = run.steps[run.i], s = ST.BY_KEY[step.key];
+  if (state.view === "stretch") render();
+  const say = `${s.n}${step.side ? ", " + step.side : ""}. ${step.cue}.`;
+  A.announce(say); A.speak(say);
+  T.start("stretch", step.seconds, `${s.n}${step.side ? ", " + step.side.toLowerCase() : ""}`);
+}
+function strFinish(early = false) {
+  const st = strState(), run = st.run; if (!run) return;
+  T.stop("stretch"); st.run = null;
+  const secs = run.steps.slice(0, run.i).reduce((n, x) => n + x.seconds, 0) + (early ? 0 : 0);
+  const minutes = Math.max(1, Math.round(secs / 60));
+  if (secs >= 45) {
+    const id = `${state.user}-${TODAY()}-stretch-${Date.now()}`;
+    save("activities", id, { user: state.user, date: TODAY(), type: "Stretch", minutes, routine: st.pick, title: run.title });
+    st.finished = { id, minutes, title: run.title, feel: null };
+  } else { st.finished = null; toast("Stretch ended. Too short to log."); }
+  render(); $("#sd-h")?.focus();
+}
+document.addEventListener("twp-timer-done", e => {
+  if (e.detail.key !== "stretch") return;
+  const run = strState().run; if (!run) return;
+  setTimeout(() => { if (strState().run !== run) return; run.i++; if (run.i >= run.steps.length) strFinish(); else strGo(); }, 1700); // after the end beeps
+});
+
 // ---------------------------------------------------------------- settings
 function openSettings() {
   state.overlay = "settings";
@@ -1342,6 +1457,9 @@ function openSettings() {
       <p class="small">${a11yOn() ? `${a11yOn()} option${a11yOn() === 1 ? "" : "s"} changed.` : "Text size, contrast, reading fonts, spoken timers, screen flashes, one-step-at-a-time, and more."}</p>
       <button class="btn primary" data-act="openA11y">Accessibility options</button></section>
     ${crewSettings()}
+    <section class="card"><h3 class="h3">Exercise library</h3>
+      <p class="small">Every exercise and machine, with how-tos, risks, and filters. Add your own, mark what's sore today, or add exercises to your plan.</p>
+      <button class="btn small" data-act="openLib">Open the exercise library</button></section>
     <section class="card"><h3 class="h3">Share GymBunnies.fit</h3>
       <p class="small">Sends the link with the GymBunnies.fit preview card. Use this instead of the browser's share button, which sends a picture of your screen.</p>
       <button class="btn primary small" data-act="shareApp">Share the app</button></section>
@@ -1872,6 +1990,23 @@ document.addEventListener("click", e => {
       drawOnboarding(); $(`#overlay [data-act=obToggle][data-k="${k}"][data-v="${el.dataset.v}"]`)?.focus(); break; }
     case "obNone": state.ob.a[el.dataset.k] = []; drawOnboarding(); break;
     case "obFinish": finishOnboarding(); break;
+    case "strMin": strState().minutes = +v; store.set("twp-str-min", +v); render(); break;
+    case "strPick": { const st = strState(); st.pick = v; if (v === "area" && !st.areas.length) st.areas = ["hips", "lowerBack"]; render(); scrollTo(0, 0); $("#sp-h")?.focus(); break; }
+    case "strBack": strState().pick = null; render(); scrollTo(0, 0); break;
+    case "strArea": { const a = strState().areas, i = a.indexOf(v); i >= 0 ? a.splice(i, 1) : a.push(v); render(); $(`[data-act=strArea][data-v="${v}"]`)?.focus(); break; }
+    case "strStart": {
+      const r = strRoutine(state.user); if (!r.items.length) break;
+      F.unlockAudio?.(); strState().finished = null;
+      strState().run = { title: r.title, steps: ST.steps(r.items), i: 0, count: r.items.length };
+      scrollTo(0, 0); strGo(); $("#sr-h")?.focus(); break;
+    }
+    case "strNext": { const run = strState().run; if (!run) break; T.stop("stretch"); run.i++; if (run.i >= run.steps.length) strFinish(); else strGo(); break; }
+    case "strPrev": { const run = strState().run; if (!run || !run.i) break; T.stop("stretch"); run.i--; strGo(); break; }
+    case "strEnd": strFinish(true); break;
+    case "strFeel": { const f = strState().finished; if (f) { f.feel = v; patch("activities", f.id, { feel: v }); render(); } break; }
+    case "strHome": strState().finished = null; strState().pick = null; render(); scrollTo(0, 0); break;
+    case "libDone": go("today"); break;
+    case "openLib": closeOverlay(); go("gym"); break;
     case "homeToggle": {
       const u = LU(), date = LD(), k = homeKey(u, date), on = !isHome(u, date);
       state.homeMode[k] = on; const cur = sessionFor(u, date); if (cur) patch("sessions", cur.id, { atHome: on });
@@ -2065,7 +2200,7 @@ document.addEventListener("click", e => {
       if (state.confirmDel !== id) { state.confirmDel = id; render(); break; }
       state.confirmDel = null; state.libEdit = null;
       if (m?.builtin) save("library", id, { hidden: true }); else remove("library", id);
-      toast(m?.builtin ? "Hidden. Restore it from the bottom of the Gym tab." : "Deleted."); break;
+      toast(m?.builtin ? "Hidden. Restore it from the bottom of the exercise library." : "Deleted."); break;
     }
     case "libRestore": remove("library", el.dataset.id); toast("Restored."); break;
     case "libQuick": { const ex = ALL_EX[el.dataset.id]; save("library", slug(ex.n), { name: ex.n, focus: ex.focus.filter(f => GROUPS.includes(f)), equip: guessEquip(ex.n), pattern: PLAN_PATTERN[ex.id] || "", kind: ex.kind, db: ex.db, sr: ex.sr, how: ex.setup, notes: "" }); toast(`Added ${ex.n}.`); break; }
@@ -2382,7 +2517,7 @@ if ("serviceWorker" in navigator) {
 // ---------------------------------------------------------------- updates
 // Every time the app opens (or comes back to the front), ask the server which version is live.
 // If it's newer than this copy, throw the old copy away and reload. No buttons needed.
-const SHELL_FILES = ["./", "index.html", "css/styles.css", "js/app.js", "js/plan.js", "js/stats.js", "js/firebase.js", "js/library.js", "js/fun.js", "js/safety.js", "js/timer.js", "js/a11y.js", "js/icons.js", "js/tailor.js", "js/program.js", "manifest.webmanifest", "sw.js"];
+const SHELL_FILES = ["./", "index.html", "css/styles.css", "js/app.js", "js/plan.js", "js/stats.js", "js/firebase.js", "js/library.js", "js/fun.js", "js/safety.js", "js/timer.js", "js/a11y.js", "js/icons.js", "js/tailor.js", "js/program.js", "js/stretch.js", "manifest.webmanifest", "sw.js"];
 async function liveVersion() {
   try { const r = await fetch(`sw.js?check=${Date.now()}`, { cache: "no-store" }); const m = /VERSION = "twp-v(\d+)"/.exec(await r.text()); return m ? m[1] : null; } catch { return null; }
 }

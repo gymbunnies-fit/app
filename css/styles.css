@@ -840,3 +840,18 @@ body[data-tone="light"] .on-dark{display:none}
 .home-note{margin:6px 2px 0}
 .ob-week{margin:6px 0 8px;padding-left:20px;display:grid;gap:6px}
 .bonus-picker{display:grid;gap:14px;margin:12px 0}
+/* Stretch tab */
+.routines{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:14px 0}
+.routine{display:flex;flex-direction:column;gap:4px;text-align:left;font:inherit;color:var(--ink);cursor:pointer;min-height:96px;margin:0}
+.routine b{font-size:1.05rem}
+.routine.featured{grid-column:1 / -1;border:2px solid var(--accent)}
+body.a11y-big-text .routines,body.a11y-huge-text .routines{grid-template-columns:1fr}
+.str-list{list-style:none;padding:0;margin:12px 0;display:grid;gap:10px}
+.str-item{display:flex;gap:14px;align-items:flex-start;margin:0}
+.str-n{font-size:1.6rem;min-width:1.4em;color:var(--accent-text)}
+.str-b{display:grid;gap:4px;min-width:0}
+.str-dose{font-weight:700}
+.str-run{display:grid;gap:12px}
+.str-side{margin:0;color:var(--accent-text)}
+.str-done{display:grid;gap:14px}
+[data-act=strBack] .ico-chevron,[data-act=libDone] .ico-chevron{transform:rotate(90deg)}

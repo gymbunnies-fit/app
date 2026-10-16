@@ -242,6 +242,28 @@ for (const b of BUILTIN) {
   yes("a home workout doesn't count as a plan day", S2.pickDay([s("2026-10-12", "A", "Home")], "jo", "2026-10-13", "2026-09-28", D2).day === "D1");
   yes("a home workout logged today opens Home", S2.pickDay([s("2026-10-13", "A", "Home")], "jo", "2026-10-13", "2026-09-28", D2).day === "Home");
 }
+// Stretch routines.
+{
+  const ST = await import(join(dir, "stretch.js"));
+  yes("30+ stretches, each with how, feel, and what it does", ST.STRETCHES.length >= 30 && ST.STRETCHES.every(s => s.how && s.feel && s.does && s.areas.length && ["standing", "seated", "floor"].includes(s.pos)));
+  for (const s of ST.STRETCHES) yes(`${s.key}: areas are known`, s.areas.every(a => ST.AREAS[a]));
+  for (const id of Object.keys(ST.ROUTINES)) for (const m of [5, 10, 15]) {
+    const areas = { today: ["legs", "hips"], sore: ["lowerBack"], area: ["shoulders"] }[id] || [];
+    const r = ST.buildRoutine(id, { minutes: m, areas });
+    yes(`${id} ${m} min: 3+ stretches, no repeats`, r.items.length >= 3 && new Set(r.items.map(o => o.key)).size === r.items.length);
+    yes(`${id} ${m} min: close to the time asked (or shorter)`, r.seconds <= m * 60 + 60 && r.seconds >= Math.min(m * 60 * 0.6, 240));
+    if (ST.ROUTINES[id].where) yes(`${id}: only ${ST.ROUTINES[id].where.join("/")}`, r.items.every(o => ST.ROUTINES[id].where.includes(ST.BY_KEY[o.key].pos)));
+    if (areas.length) yes(`${id}: on the chosen areas`, r.items.every(o => ST.BY_KEY[o.key].areas.some(a => areas.includes(a))));
+  }
+  const nf = ST.buildRoutine("bedtime", { minutes: 10, prof: { limits: ["noFloor"], injuries: ["knees"] } });
+  yes("no-floor limit: no floor stretches", nf.items.length && nf.items.every(o => ST.BY_KEY[o.key].pos !== "floor"));
+  yes("knee injury: skips stretches that load the knee", nf.items.every(o => !ST.BY_KEY[o.key].caution.includes("knees")));
+  yes("sore spots: gentle ones only", ST.buildRoutine("sore", { minutes: 10, areas: ["lowerBack", "hips"] }).items.every(o => !ST.BY_KEY[o.key].caution.length));
+  yes("bedtime ends on the breathing", (r => !r.items.some(o => o.key === "box-breath") || r.items.at(-1).key === "box-breath")(ST.buildRoutine("bedtime", { minutes: 15 })));
+  const steps = ST.steps([{ key: "quad", rounds: 2 }, { key: "childs-pose", rounds: 1 }]);
+  yes("guided steps: each side, each round", steps.length === 5 && steps[0].side === "Left side" && steps[1].side === "Right side" && steps[3].round === 2 && steps[4].side === "");
+  yes("dose text reads like stretching", ST.doseText(ST.BY_KEY.quad, 2) === "Hold 25 sec · each side · 2 rounds" && ST.doseText(ST.BY_KEY["childs-pose"]) === "6 slow breaths");
+}
 // ---------------------------------------------------------------- accessibility settings
 {
   const mem = {}; globalThis.localStorage = { getItem: k => mem[k] ?? null, setItem: (k, v) => { mem[k] = String(v); }, removeItem: k => { delete mem[k]; } };
