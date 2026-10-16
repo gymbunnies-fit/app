@@ -107,8 +107,9 @@ export function funWeight(lb) {
 const workoutDays = ss => [...new Set(ss.filter(s => (s.exercises || []).some(e => !e.skipped && e.sets?.length)).map(s => s.date))].sort();
 
 // Weeks (by Monday) with at least `need` workout days, and streaks of them.
-export function streaks(sessions, user, today, need = 3) {
-  const days = workoutDays(S.userSessions(sessions, user));
+// extra: more dates that count as workout days (bonus sessions logged on their own).
+export function streaks(sessions, user, today, need = 3, extra = []) {
+  const days = [...new Set([...workoutDays(S.userSessions(sessions, user)), ...extra])].sort();
   const perWeek = {}; for (const d of days) { const m = S.mondayOf(d); perWeek[m] = (perWeek[m] || 0) + 1; }
   const good = new Set(Object.keys(perWeek).filter(k => perWeek[k] >= need));
   const thisMon = S.mondayOf(today);

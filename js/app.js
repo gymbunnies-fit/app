@@ -3,6 +3,7 @@ import { PROFILES as SEEDS, PLAN, STRETCH, CARDIO, CARDIO_MACHINES, DAYS, DAY_NA
 import * as F from "./fun.js";
 import * as T from "./timer.js";
 import * as A from "./a11y.js";
+import * as TL from "./tailor.js";
 import { icon, play, ears } from "./icons.js";
 import { safetyFor } from "./safety.js";
 import * as S from "./stats.js";
@@ -12,7 +13,7 @@ import { connect, save, remove, patch, dropField, signOutAndClear, importAll, CO
 
 // ---------------------------------------------------------------- helpers
 // Shown at the bottom of Settings so you can tell whether a phone has the latest update. Bump with sw.js VERSION.
-const APP_VERSION = "28";
+const APP_VERSION = "29";
 // The app's name lives here only (plus manifest.webmanifest and the <title> tags in index.html, which can't read JS).
 const APP_NAME = "GymBunnies.fit";
 const $ = (s, r = document) => r.querySelector(s);
@@ -36,6 +37,7 @@ function P(id) {
   const saved = state.data.profiles.find(p => p.id === id) || {};
   const p = { ...PROFILE_DEFAULTS, ...(SEEDS[id] || {}), ...(SEED_EXTRA[id] || {}), ...saved, id };
   if (!p.name) p.name = id;
+  p.tailor = Object.fromEntries((p.tailorList || []).map(t => [t.id, t]));
   return (profMemo.map[id] = p);
 }
 const PROFILES = new Proxy({}, { get: (_, id) => P(id) });
@@ -154,7 +156,27 @@ function slotDate(week, day) {
   return S.addDays(cyc.start, (week === "B" ? 7 : 0) + DAYS.indexOf(day));
 }
 function autoSel() { return S.pickDay(state.data.sessions, LU(), TODAY(), cycleStart()); }
-const variantOf = (u, ex) => state.variants[`${u}:${ex.id}`] || (P(u).defaultVariant === "hard" && ex.h ? "hard" : "std");
+// Weekly goal from the questionnaire (3 if they haven't taken it), and days with a bonus session logged.
+const paceOf = u => +P(u).daysPerWeek || 3;
+const bonusDates = u => state.data.activities.filter(a => a.user === u && /^Bonus/.test(a.type || "")).map(a => a.date);
+// A plan day this week: done (with the date you did it), missed (the week ended without it), or open.
+function dayStatus(u, week, day) {
+  const cyc = S.cycleInfo(BASE_DATE(), cycleStart());
+  const hit = state.data.sessions.filter(x => x.user === u && x.week === week && x.day === day && x.date >= cyc.start && x.date <= cyc.end)
+    .find(x => (x.exercises || []).some(e => e.sets?.length) || x.markedDone);
+  if (hit) return { state: "done", date: hit.date };
+  if (S.addDays(slotDate(week, "Mon"), 6) >= TODAY()) return { state: "open" };
+  // The week is over. If they hit their weekly goal, the rest weren't "missed", just extras they skipped.
+  const doneCount = DAYS.filter(d => d !== day && state.data.sessions.some(x => x.user === u && x.week === week && x.day === d && x.date >= cyc.start && x.date <= cyc.end && ((x.exercises || []).some(e => e.sets?.length) || x.markedDone))).length;
+  return { state: doneCount >= Math.min(4, paceOf(u)) ? "skipped" : "missed" };
+}
+const variantOf = (u, ex) => state.variants[`${u}:${ex.id}`] || tailoredV(u, ex) || (P(u).defaultVariant === "hard" && ex.h ? "hard" : "std");
+// The version the questionnaire picked for this person, if it still exists.
+function tailoredV(u, ex) {
+  const t = P(u).tailor?.[ex.id]; if (!t) return null;
+  if ((t.v === "hard" && !ex.h) || (t.v === "swap" && !ex.swap) || (String(t.v).startsWith("lib:") && !libItem(t.v.slice(4)))) return null;
+  return t.v;
+}
 
 // ---------------------------------------------------------------- sessions: one document per person per plan day
 // Each workout belongs to a plan slot (Week A Monday, Week B Tuesday, ...) within a two-week cycle.
@@ -370,17 +392,27 @@ function viewToday() {
   ${rem.length && !focusOn() ? `<section class="reminders" aria-labelledby="rem-title"><h2 class="rem-title" id="rem-title">${icon("pulse", 16, { stroke: 2 })}${rem.every(r => r.id === "weigh" || r.id === "measure") ? "Set your starting point" : "Reminders"}</h2>${rem.map(r => `<div class="rem"><p>${esc(r.text)}</p><button class="btn pill" data-act="goView" data-v="${r.view}">Open</button><button class="icon-btn round ghost" data-act="dismissRem" data-v="${r.id}" aria-label="Dismiss until tomorrow: ${esc(r.text)}">${icon("x", 18, { stroke: 2 })}</button></div>`).join("")}</section>` : ""}
   ${(() => { const sd = slotDate(week, day); const any = s && ((s.exercises || []).some(e => e.sets?.length) || s.markedDone);
     if (s?.markedDone && !(s.exercises || []).some(e => e.sets?.length)) return `<div class="banner">Marked done. No sets were logged for this day. <button class="btn small" data-act="unmarkDone">Undo</button></div>`;
-    return !any && sd < TODAY() ? `<div class="banner">${DAY_NAMES[day]}, ${S.fmtDate(sd)} has nothing logged. <button class="btn small" data-act="markDone">Mark this day done</button></div>` : ""; })()}
+    const weekOver = S.addDays(slotDate(week, "Mon"), 6) < TODAY();
+    if (!any && weekOver && dayStatus(u, week, day).state === "missed") return `<div class="banner">${DAY_NAMES[day]} was missed the week of ${S.fmtDate(slotDate(week, "Mon"))}. If you did it but didn't log it, <button class="btn small" data-act="markDone">Mark it done</button></div>`;
+    const pick = autoSel();
+    if (pick.complete && pick.week === week && ci.week === week) {
+      const extra = paceOf(u) > 4, bonusToday = bonusDates(u).includes(TODAY());
+      return `<div class="banner">All four days done this week. Week ${week === "A" ? "B" : "A"} starts Monday at Day 1.${extra ? ` Going for ${paceOf(u)} days? Bonus days: 20–30 minutes of cardio, plus core work or the stretches. ${bonusToday ? "<b>Bonus session logged today.</b>" : `<button class="btn small" data-act="bonusLog">Log a bonus session today</button>`}` : ""}</div>`;
+    }
+    return ""; })()}
   ${dl ? `<div class="banner"><b>Lighter week</b> until ${S.fmtDate(deloadOf(u).to)}: about 60% of your usual weights and one less set. <button class="btn small" data-act="endDeload">End it early</button></div>` : dlSug ? `<div class="banner">${esc(dlSug)} <button class="btn small" data-act="startDeload">Start a lighter week</button></div>` : ""}
   <section class="today-top" aria-labelledby="today-title">
-    <div class="week-row"><span class="eyebrow">${ci.week === week ? "This week" : "Week " + week} · ${S.fmtDate(slotDate(week, "Mon"))} to ${S.fmtDate(slotDate(week, "Thu"))}</span>${seg("selWeek", week, [["A", "Week A"], ["B", "Week B"]], "Week")}</div>
-    <div class="chips day-tiles" role="group" aria-label="Day">${DAYS.map((d, i) => { const dt = slotDate(week, d); return `<button data-act="selDay" data-v="${d}" aria-pressed="${d === day}" aria-label="${DAY_NAMES[d]}, ${S.fmtDate(dt)}${dt === TODAY() ? ", today" : ""}, ${esc(dayTitle(u, week, d))}"><span class="d" aria-hidden="true">${d} <span class="dt">${S.fmtDate(dt).replace(/^\w+ /, "")}</span></span><span class="m" aria-hidden="true">${esc(dayTitle(u, week, d).split(",")[0])}</span>${dt === TODAY() ? `<span class="today-dot" aria-hidden="true">Today</span>` : ""}</button>`; }).join("")}</div>
+    <div class="week-row"><span class="eyebrow">${ci.week === week ? "This week" : "Week " + week} · ${S.fmtDate(slotDate(week, "Mon"))} to ${S.fmtDate(S.addDays(slotDate(week, "Mon"), 6))}</span>${seg("selWeek", week, [["A", "Week A"], ["B", "Week B"]], "Week")}</div>
+    <div class="chips day-tiles" role="group" aria-label="Day">${(() => { const nx = autoSel(); return DAYS.map(d => { const ds = dayStatus(u, week, d); const next = ci.week === week && !nx.complete && nx.day === d && ds.state !== "done";
+      const note = ds.state === "done" ? `✓ ${S.fmtDate(ds.date)}` : ds.state === "missed" ? "Missed" : next ? "Up next" : "";
+      const sr = ds.state === "done" ? `done ${S.fmtDate(ds.date)}` : ds.state === "missed" ? "missed" : next ? "up next" : "not done yet";
+      return `<button data-act="selDay" data-v="${d}" aria-pressed="${d === day}" class="${ds.state}${next ? " next" : ""}" aria-label="${DAY_NAMES[d]}, ${esc(dayTitle(u, week, d))}, ${sr}"><span class="d" aria-hidden="true">${DAY_NAMES[d]}</span><span class="m" aria-hidden="true">${esc(dayTitle(u, week, d).split(",")[0])}</span>${note ? `<span class="today-dot" aria-hidden="true">${note}</span>` : ""}</button>`; }).join(""); })()}</div>
     <div class="ring-row"><div class="today-title"><span class="eyebrow">Week ${week} · ${DAY_NAMES[day]}</span><h2 class="h2" id="today-title">${esc(dayTitle(u, week, day))}</h2></div>${funAt("medium") ? ring(done, list.length) : `<span class="small muted">${done} of ${list.length} done</span>`}</div>
     ${funHeader(u)}
     ${workoutBar(u, date, s)}
     <details class="more row-disclosure"><summary>${esc(p.name)}'s focus, notes, and date${icon("chevron", 20, { stroke: 2 })}</summary><div class="panel"><p>${esc(p.focusNote)}</p><ul class="small">${(p.notes || []).map(n => `<li>${esc(n)}</li>`).join("")}</ul>
       <label class="field">Logging date<input type="date" data-act="logDate" value="${date}"></label>
-      ${s ? `<div class="field"><span id="move-lbl">This workout is saved as Week ${esc(week)} ${esc(DAY_NAMES[day])}. Move it to:</span><div class="row" role="group" aria-labelledby="move-lbl">${["A", "B"].flatMap(w => DAYS.map(d => [w, d])).filter(([w, d]) => w !== week || d !== day).map(([w, d]) => `<button type="button" class="btn small" data-act="moveWorkout" data-v="${w}${d}">Week ${w} ${d}</button>`).join("")}</div></div>` : ""}</div></details>
+      ${s ? `<div class="field"><span id="move-lbl">This workout is saved as Week ${esc(week)} ${esc(DAY_NAMES[day])}. Move it to:</span><div class="row" role="group" aria-labelledby="move-lbl">${["A", "B"].flatMap(w => DAYS.map(d => [w, d])).filter(([w, d]) => w !== week || d !== day).map(([w, d]) => `<button type="button" class="btn small" data-act="moveWorkout" data-v="${w}${d}">Week ${w} ${DAY_NAMES[d]}</button>`).join("")}</div></div>` : ""}</div></details>
     <div class="row"><button class="btn small" data-act="planEdit" aria-pressed="${!!state.planEdit}">${state.planEdit ? "Done editing plan" : "Edit this day's plan"}</button>
       ${funAt("medium") && partner !== u ? `<button class="btn small" data-act="hi5">🙌 High-five ${esc(P(partner).name)}</button>` : ""}</div>
     ${state.planEdit ? planEditBox(u, week, day) : ""}
@@ -490,6 +522,7 @@ function exerciseCard(u, date, ex, added, s, idx = 0, count = 0, cardOpts = {}) 
     ${head}<div class="ex-body" id="exb-${ex.id}">
     ${sore.high.length ? `<div class="pill hold">Hard on your ${esc(listText(sore.high.map(j => (JOINTS[j] || j).toLowerCase())))} today. Consider the Alternative or Library version.</div>` : sore.some.length ? `<div class="small warn-text">Some load on your ${esc(listText(sore.some.map(j => (JOINTS[j] || j).toLowerCase())))} today.</div>` : ""}
     ${opts.length > 1 ? seg("variant", String(v).startsWith("lib:") ? "lib" : v, opts, "Version") + `<p class="v-note small"><b>${esc(vLabel(v))}:</b> ${esc(VARIANT_NOTE[String(v).startsWith("lib:") ? "lib" : v] || "")}</p>` : ""}
+    ${(() => { const t = P(u).tailor?.[ex.id]; return t && t.v === v ? `<p class="tailor-note small"><span aria-hidden="true">✨</span> Picked for you: ${esc(t.why)}.</p>` : ""; })()}
     ${why ? `<div class="why">${esc(why)}</div>` : ""}
     ${lib ? `<div class="row"><a class="video" href="${yt(lib.name)}" target="_blank" rel="noopener">Watch form videos</a><button class="btn small" data-act="libSwap">Change machine</button></div>` : ""}
     ${lib?.tip ? `<div class="small muted"><b>Setup:</b> ${esc(lib.tip)}</div>` : ""}
@@ -505,7 +538,7 @@ function exerciseCard(u, date, ex, added, s, idx = 0, count = 0, cardOpts = {}) 
     <div class="row"><button class="btn small" data-act="addSet">+ Add set</button><button class="btn small" data-act="timer">Rest timer</button>${A.get().readAloud && A.canSpeak() ? `<button class="btn small" data-act="readEx" aria-label="Read ${esc(def.name)} aloud">🔊 Read aloud</button>` : ""}
       ${logged ? `<button class="btn small" data-act="cancelEdit">Cancel</button><button class="btn small danger" data-act="deleteEx">${state.confirmDel === ek ? "Confirm delete" : "Delete"}</button>` : added ? `<button class="btn small danger" data-act="dropExtra">Remove</button>` : ""}</div>
     <button class="btn primary block ${d.sets.length && d.sets.every(x => x.done) ? "ready" : ""}" data-act="saveEx">${logged ? "Save changes" : "Save exercise"}</button>
-    ${state.planEdit && !added ? `<div class="plan-tools"><span class="small muted">Plan for Week ${state.sel.week} ${state.sel.day}</span>
+    ${state.planEdit && !added ? `<div class="plan-tools"><span class="small muted">Plan for Week ${state.sel.week} ${DAY_NAMES[state.sel.day]}</span>
       <div class="row"><button class="btn small" data-act="planMove" data-v="-1" ${idx === 0 ? "disabled" : ""} aria-label="Move up">↑</button><button class="btn small" data-act="planMove" data-v="1" ${idx >= count - 1 ? "disabled" : ""} aria-label="Move down">↓</button>
       <label class="field" style="flex:1;min-width:120px">Target<input type="text" data-act="planSr" value="${esc(target)}"></label>
       <button class="btn small danger" data-act="planRemove">Remove</button></div></div>` : ""}
@@ -626,7 +659,7 @@ function drawPicker() {
   const item = (id, name, meta) => `<button class="list-btn" data-act="pickEx" data-id="${id}"><b>${esc(name)}</b><span class="small muted">${esc(meta)}</span></button>`;
   const libList = allLibrary().filter(m => !onList.has(`lib-${m.id}`) && match(m.name)).sort((a, b) => a.name.localeCompare(b.name)).map(m => `<button class="list-btn" data-act="pickLib" data-id="${esc(m.id)}"><b>${esc(m.name)}</b><span class="small muted">${esc([EQUIP[m.equip], (m.focus || []).map(f => FOCUS[f]).join(", ")].filter(Boolean).join(" · "))}</span></button>`).join("");
   const cust = [...customs.values()].filter(e => !onList.has(e.id) && match(e.name)).map(e => item(e.id, e.name, "Your exercise")).join("");
-  const plan = Object.values(ALL_EX).filter(e => !onList.has(e.id) && match(e.n)).map(e => item(e.id, e.n, `Week ${e.week} ${e.day} · ${e.sr}`)).join("");
+  const plan = Object.values(ALL_EX).filter(e => !onList.has(e.id) && match(e.n)).map(e => item(e.id, e.n, `Week ${e.week} ${DAY_NAMES[e.day]} · ${e.sr}`)).join("");
   $("#overlay").innerHTML = `<div class="overlay" role="dialog" aria-label="Add an exercise"><div class="inner">
     <div class="between"><h2 class="h2">Add an exercise</h2><button class="btn small" data-act="closeOverlay">Close</button></div>
     <label class="field">Search<input type="text" id="picker-q" data-act="pickerQ" value="${esc(state.pickerQ)}" placeholder="Hip adductor, row, curl…" autocomplete="off"></label>
@@ -853,7 +886,7 @@ function drawAddPlan() {
     <p><b>${esc(m.name)}</b> · ${esc(m.sr)}</p>
     <div class="field"><span>Whose plan</span>${segA("who", [...profileIds().map(id => [id, P(id).name]), ...(profileIds().length > 1 ? [["both", profileIds().length > 2 ? "Me + partner" : "Both"]] : [])])}</div>
     <div class="field"><span>Week</span>${segA("week", [["A", "Week A"], ["B", "Week B"], ["AB", "Both weeks"]])}</div>
-    <div class="field"><span>Day</span><div class="chips">${DAYS.map(d => `<button data-act="apSet" data-k="day" data-v="${d}" aria-pressed="${a.day === d}">${d}<small>${esc(PLAN.A[d].title.split(",")[0])}</small></button>`).join("")}</div></div>
+    <div class="field"><span>Day</span><div class="chips">${DAYS.map(d => `<button data-act="apSet" data-k="day" data-v="${d}" aria-pressed="${a.day === d}">${DAY_NAMES[d]}<small>${esc(PLAN.A[d].title.split(",")[0])}</small></button>`).join("")}</div></div>
     <button class="btn primary block" data-act="apSave">Add to plan</button>
   </div></div>`;
 }
@@ -1067,7 +1100,7 @@ function funHeader(u) {
   if (!funAt("medium", u) && !funAt("light", u)) return "";
   const parts = [];
   if (funAt("medium")) {
-    const st = F.streaks(state.data.sessions, u, TODAY());
+    const st = F.streaks(state.data.sessions, u, TODAY(), paceOf(u), bonusDates(u));
     parts.push(`<div class="stat-tile"><div class="st-top">${icon("flame", 18, { stroke: 2 })}<span class="big-num">${st.current}</span><span class="st-unit">week${st.current === 1 ? "" : "s"}</span></div><div class="st-sub">streak · ${st.thisWeek} of ${st.need}+ this week</div></div>`);
   }
   if (funAt("full")) {
@@ -1132,6 +1165,92 @@ function saveProfileForm() {
   toast(f.id ? "Saved." : `Welcome, ${name}!`); closeOverlay(); render();
 }
 
+// ---------------------------------------------------------------- onboarding questionnaire
+// One question per screen. New people go through it when they're added; anyone can retake it from Settings.
+// Finishing tailors the plan to them (see tailor.js) and saves the answers on their profile.
+const OB_STEPS = ["name", "goals", "focus", "experience", "schedule", "injuries", "limits", "cardio", "review"];
+function openOnboarding(id) {
+  state.overlay = "onboard";
+  const p = id ? P(id) : { ...PROFILE_DEFAULTS, name: "", color: ["#2f6b5e", "#4b5d8a", "#b5532f", "#8a5a9c", "#2e7d4f", "#9a6b12"][profileIds().length % 6] };
+  state.ob = { id, step: 0, a: {
+    name: p.name || "", avatar: p.avatar || "", color: p.color, goals: [...(p.goals || [])], goalNote: p.focusNote || "", focus: [...(p.focus || [])],
+    experience: p.experience || "", intensity: p.intensity || "steady", days: p.daysPerWeek || 4, sessionLen: p.sessionLen || 60,
+    injuries: id ? [...(p.injuries || [])] : [], injuryNote: p.injuryNote || "", limits: [...(p.limits || [])], limitNote: p.limitNote || "",
+    cardio: p.cardio || "steady", commute: !!p.commute?.enabled, miles: p.commute?.miles || ""
+  } };
+  drawOnboarding();
+}
+function obAnswers() { const a = state.ob.a; return { injuries: a.injuries, limits: a.limits, experience: a.experience || "some", intensity: a.intensity }; }
+function drawOnboarding() {
+  const o = state.ob, a = o.a, step = OB_STEPS[o.step], n = OB_STEPS.length;
+  const multi = (k, opts, none) => `<div class="focus-chips ob-chips" role="group">${opts.map(([v, l]) => `<button type="button" data-act="obToggle" data-k="${k}" data-v="${v}" aria-pressed="${a[k].includes(v)}">${esc(l)}</button>`).join("")}${none ? `<button type="button" data-act="obNone" data-k="${k}" aria-pressed="${!a[k].length}">${esc(none)}</button>` : ""}</div>`;
+  const single = (k, opts) => `<div class="ob-choices" role="radiogroup">${opts.map(([v, l, sub]) => `<button type="button" role="radio" data-act="obPick" data-k="${k}" data-v="${v}" aria-checked="${String(a[k]) === String(v)}"><b>${esc(l)}</b>${sub ? `<small>${esc(sub)}</small>` : ""}</button>`).join("")}</div>`;
+  const q = (title, sub, body) => `<h2 class="h2 ob-q" id="ob-q" tabindex="-1">${title}</h2>${sub ? `<p class="muted">${sub}</p>` : ""}${body}`;
+  let body = "";
+  if (step === "name") body = q(o.id ? `Let's update your plan, ${esc(a.name)}` : "Welcome! Let's build your plan.", "A few quick questions so the workouts fit you: your goals, your body, and your schedule. About two minutes.",
+    `<label class="field">First name<input type="text" data-ob="name" value="${esc(a.name)}" placeholder="First name" autocomplete="given-name"></label>
+     <div class="field"><span>Pick an avatar</span><div class="avatars"><button type="button" data-act="obPick" data-k="avatar" data-v="" aria-pressed="${!a.avatar}">${esc((a.name || "A")[0].toUpperCase())}</button>${AVATARS.map(x => `<button type="button" data-act="obPick" data-k="avatar" data-v="${x}" aria-pressed="${a.avatar === x}">${x}</button>`).join("")}</div></div>`);
+  if (step === "goals") body = q("What do you want out of training?", "Pick up to three.", multi("goals", Object.entries(TL.GOALS)) +
+    `<label class="field">Anything else? (optional)<textarea data-ob="goalNote" placeholder="Get ready for a hike, fit into my suit for a wedding…">${esc(a.goalNote)}</textarea></label>`);
+  if (step === "focus") body = q("Any body parts you want extra attention on?", "Optional. Leave it blank for a balanced plan.", multi("focus", [...GROUPS.filter(g => g !== "cardio").map(g => [g, FOCUS[g]]), ["full", "Full body"], ["cardio", "Cardio fitness"]]));
+  if (step === "experience") body = q("How much have you trained before?", "", single("experience", Object.entries(TL.EXPERIENCE).map(([k, [l, s]]) => [k, l, s]))) +
+    `<h3 class="h3 ob-sub">How hard should we push?</h3>` + single("intensity", [["easy", "Ease me in", "Lighter start, build up slowly"], ["steady", "Steady", "Challenging but comfortable"], ["push", "Push me", "Harder versions when they're safe for you"]]);
+  if (step === "schedule") body = q("How many days a week do you want to train?", "This is your weekly goal. The plan has 4 workouts a week. Fewer is fine, and on extra days you can log bonus sessions.",
+    `<div class="seg ob-days" role="radiogroup">${[1, 2, 3, 4, 5, 6, 7].map(d => `<button type="button" role="radio" data-act="obPick" data-k="days" data-v="${d}" aria-checked="${+a.days === d}" aria-label="${d} day${d === 1 ? "" : "s"} a week">${d}</button>`).join("")}</div>
+     <h3 class="h3 ob-sub">How long is a typical session?</h3>` + single("sessionLen", Object.entries(TL.SESSION_LEN)));
+  if (step === "injuries") body = q("Any injuries, aches, or weak spots?", "We'll swap in gentler exercises for these and track them in your daily check-in. Pick all that apply.",
+    multi("injuries", Object.entries(PAIN_AREAS), "None") + `<label class="field">Details (optional)<textarea data-ob="injuryNote" placeholder="Torn meniscus in my left knee, 2023…">${esc(a.injuryNote)}</textarea></label>
+     <p class="small muted">This isn't medical advice. If something hurts, stop, and check with a doctor or physical therapist.</p>`);
+  if (step === "limits") body = q("Anything we should work around?", "Pick all that apply.", multi("limits", Object.entries(TL.LIMITS), "None of these") +
+    `<label class="field">Anything else? (optional)<textarea data-ob="limitNote" placeholder="Bad balance on my left side, no lying flat…">${esc(a.limitNote)}</textarea></label>`);
+  if (step === "cardio") body = q("How do you like your cardio?", "", single("cardio", [["steady", "Steady", "Bike, elliptical, or walking at a pace you can talk at"], ["intervals", "Steady plus intervals", "Two days a week of hard and easy bursts"]])) +
+    `<label class="check"><input type="checkbox" data-ob="commute" ${a.commute ? "checked" : ""}><span>I bike or walk to work (counts as cardio)</span></label>
+     <label class="field">Round-trip miles (optional)<input type="number" inputmode="decimal" step="any" data-ob="miles" value="${esc(a.miles)}"></label>`;
+  if (step === "review") {
+    const t = TL.tailorPlan(obAnswers()); const list = Object.entries(t);
+    const line = ([exId, x]) => { const ex = ALL_EX[exId]; const nm = x.v === "hard" ? ex.h?.n : x.v === "swap" ? ex.swap?.n : libItem(x.v.slice(4))?.name; return `<li><b>${esc(ex.n)}</b> → ${esc(nm || "")}<br><span class="small muted">${esc(x.why)} · Week ${ex.week} ${DAY_NAMES[ex.day]}</span></li>`; };
+    const gentle = list.filter(([, x]) => x.v !== "hard"), harder = list.filter(([, x]) => x.v === "hard");
+    body = q(`Here's your plan${a.name ? ", " + esc(a.name) : ""}`, "",
+      `<section class="card ob-sum"><p><b>${a.days} day${+a.days === 1 ? "" : "s"} a week</b> · ${esc(TL.SESSION_LEN[a.sessionLen] || "")} · ${esc(TL.EXPERIENCE[a.experience || "some"][0])}</p>
+        ${a.goals.length ? `<p>Goals: ${esc(listText(a.goals.map(g => TL.GOALS[g].toLowerCase())))}.</p>` : ""}
+        ${a.focus.length ? `<p>Extra attention: ${esc(listText(a.focus.map(f => (FOCUS[f] || f).toLowerCase())))}.</p>` : ""}</section>
+       ${list.length ? `<p>We changed <b>${list.length}</b> exercise${list.length === 1 ? "" : "s"} to fit you. You can switch any of them back on the workout card.</p>
+         ${gentle.length ? `<details class="more" open><summary>Gentler or safer for you (${gentle.length})</summary><div class="panel"><ul class="ob-list">${gentle.map(line).join("")}</ul></div></details>` : ""}
+         ${harder.length ? `<details class="more"><summary>Tougher versions (${harder.length})</summary><div class="panel"><ul class="ob-list">${harder.map(line).join("")}</ul></div></details>` : ""}`
+        : `<p>The standard plan already fits you, so nothing needed changing. You can still pick a different version of any exercise on its card.</p>`}
+       <p class="small muted">Change any of this later in Settings → Your plan → Retake the questionnaire.</p>`);
+  }
+  const canNext = step !== "name" || a.name.trim();
+  $("#overlay").innerHTML = `<div class="overlay ob" role="dialog" aria-modal="true" aria-labelledby="ob-q"><div class="inner">
+    <div class="between"><span class="eyebrow">Step ${o.step + 1} of ${n}</span><button class="btn small" data-act="closeOverlay">${o.id ? "Cancel" : "Later"}</button></div>
+    <div class="ob-progress" role="progressbar" aria-label="Questionnaire progress" aria-valuemin="1" aria-valuemax="${n}" aria-valuenow="${o.step + 1}"><i style="width:${((o.step + 1) / n) * 100}%"></i></div>
+    ${body}
+    <div class="ob-nav">${o.step ? `<button class="btn" data-act="obBack">Back</button>` : "<span></span>"}
+      ${step === "review" ? `<button class="btn primary" data-act="obFinish">${o.id ? "Save my plan" : "Start training"}</button>` : `<button class="btn primary" data-act="obNext" ${canNext ? "" : "disabled"}>${step === "cardio" ? "See my plan" : "Next"}</button>`}</div>
+  </div></div>`;
+  const h = $("#ob-q"); h?.focus({ preventScroll: true }); $("#overlay .overlay")?.scrollTo(0, 0);
+}
+function finishOnboarding() {
+  const o = state.ob, a = o.a; const name = a.name.trim(); if (!name) { o.step = 0; drawOnboarding(); return; }
+  let id = o.id; if (!id) { id = slug(name) || "person"; let k = 2; while (profileIds().includes(id)) id = `${slug(name)}-${k++}`; }
+  const tailor = TL.tailorPlan(obAnswers());
+  const harder = a.experience === "veteran" || (a.experience === "regular" && a.intensity === "push");
+  saveProfile(id, {
+    name, avatar: a.avatar, color: a.color || "#2f6b5e", goals: a.goals, focusNote: a.goalNote.trim(), focus: a.focus,
+    experience: a.experience || "some", intensity: a.intensity, daysPerWeek: +a.days || 4, sessionLen: +a.sessionLen || 60,
+    injuries: a.injuries, injuryNote: a.injuryNote.trim(), limits: a.limits, limitNote: a.limitNote.trim(),
+    pain: a.injuries.length ? a.injuries : (o.id ? P(id).pain : ["knees", "shoulders", "lowerBack"]),
+    defaultVariant: harder ? "hard" : "std", cardio: a.cardio, commute: { enabled: !!a.commute, miles: +a.miles || 0 },
+    tailorList: Object.entries(tailor).map(([exId, t]) => ({ id: exId, v: t.v, why: t.why })), onboardedAt: Date.now()
+  });
+  // Tailored picks win over a version chosen earlier on this phone.
+  for (const exId of Object.keys(tailor)) delete state.variants[`${id}:${exId}`];
+  store.set("twp-variants", state.variants);
+  if (!o.id && !state.user) { state.user = id; state.viewUser = id; store.set("twp-user", id); }
+  state.ob = null; closeOverlay();
+  toast(o.id ? "Your plan is updated." : `Welcome, ${name}! Your plan is ready.`); render();
+}
+
 // ---------------------------------------------------------------- settings
 function openSettings() {
   state.overlay = "settings";
@@ -1146,6 +1265,9 @@ function openSettings() {
       <p class="small">${a11yOn() ? `${a11yOn()} option${a11yOn() === 1 ? "" : "s"} changed.` : "Text size, contrast, reading fonts, spoken timers, screen flashes, one-step-at-a-time, and more."}</p>
       <button class="btn primary" data-act="openA11y">Accessibility options</button></section>
     ${crewSettings()}
+    <section class="card"><h3 class="h3">Your plan</h3>
+      <p class="small">${p.onboardedAt ? `Tailored from your questionnaire: ${p.daysPerWeek || 4} day${(p.daysPerWeek || 4) === 1 ? "" : "s"} a week${(p.tailorList || []).length ? `, ${p.tailorList.length} exercise${p.tailorList.length === 1 ? "" : "s"} adjusted for you` : ""}.` : "Answer a few questions about your goals, injuries, and schedule, and the plan adjusts to fit you."}</p>
+      <div class="row"><button class="btn primary small" data-act="obRetake">${p.onboardedAt ? "Retake the questionnaire" : "Tailor my plan"}</button>${(p.tailorList || []).length ? `<button class="btn small" data-act="tailorOff">Use the standard plan</button>` : ""}</div></section>
     <section class="card"><h3 class="h3">Who's using this phone</h3>${personToggle("pickUser", u)}
       <div class="row"><button class="btn small" data-act="editProfile">Edit ${esc(p.name)}'s profile</button><button class="btn small" data-act="newProfile">+ New person</button></div>
       ${profileIds().length > 1 ? `<label class="check"><input type="checkbox" data-act="partner" ${state.partner ? "checked" : ""}><span>Partner mode: log for a partner from this phone</span></label>` : ""}
@@ -1248,7 +1370,7 @@ function crewStats(id) {
   const prs = F.prEvents(state.data.sessions, id).filter(e => e.date >= ci.start && e.date <= ci.end);
   const cardio = inCycle.reduce((n, x) => n + (x.cardio?.done ? +x.cardio.minutes || 0 : 0), 0);
   return { days: new Set(trained.map(x => x.date)), week: trained.filter(x => x.date >= wk).length, cycle: inCycle.length, sets, lbs, prs, cardio,
-    streak: F.streaks(state.data.sessions, id, t), badges: F.earnedBadges(state.data.sessions, state.data.body, state.data.activities, id, t).size,
+    streak: F.streaks(state.data.sessions, id, t, paceOf(id), bonusDates(id)), badges: F.earnedBadges(state.data.sessions, state.data.body, state.data.activities, id, t).size,
     last: trained.map(x => x.date).sort().pop() || null, ci, wk };
 }
 const SHARE_LABEL = { all: "Everything", trained: "Just that I trained", none: "Nothing" };
@@ -1303,7 +1425,7 @@ function progCalendar() {
     <div class="row small" aria-hidden="true">${ids.map(id => `<span><i class="cal-key" style="background:${esc(P(id).color)}" data-i="${esc((P(id).name || "?")[0].toUpperCase())}"></i> ${esc(P(id).name)}</span>`).join("")}</div>
   </section>
   <section class="card"><h3 class="h3">Streaks</h3><p class="small muted">A streak week has 3 or more workouts.</p>
-    ${ids.map(id => { const st = F.streaks(state.data.sessions, id, TODAY()); return `<div class="list-item"><span>${avatarHtml(id)}${esc(P(id).name)}</span><span class="small mono">🔥 ${st.current} now · best ${st.longest} · ${st.days} workouts</span></div>`; }).join("")}</section>`;
+    ${ids.map(id => { const st = F.streaks(state.data.sessions, id, TODAY(), paceOf(id), bonusDates(id)); return `<div class="list-item"><span>${avatarHtml(id)}${esc(P(id).name)}</span><span class="small mono">🔥 ${st.current} now · best ${st.longest} · ${st.days} workouts</span></div>`; }).join("")}</section>`;
 }
 function progBadges() {
   const u = state.viewUser; const got = F.earnedBadges(state.data.sessions, state.data.body, state.data.activities, u, TODAY());
@@ -1342,7 +1464,7 @@ function progLifts() {
   const h = S.exHistory(state.data.sessions, u, id, v);
   const def = S.defFor(id, v, h[h.length - 1]);
   const loggedOpts = [...logged.entries()].map(([k, n]) => `<option value="${esc(k)}" ${k === state.progEx ? "selected" : ""}>${esc(n)}${k.endsWith("|hard") ? " (harder)" : k.endsWith("|swap") ? " (swap)" : k.includes("|lib:") ? " (library swap)" : ""}</option>`).join("");
-  const planOpts = Object.values(ALL_EX).filter(e => !logged.has(`${e.id}|std`)).map(e => `<option value="${e.id}|std" ${`${e.id}|std` === state.progEx ? "selected" : ""}>${esc(e.n)} · ${e.week} ${e.day}</option>`).join("");
+  const planOpts = Object.values(ALL_EX).filter(e => !logged.has(`${e.id}|std`)).map(e => `<option value="${e.id}|std" ${`${e.id}|std` === state.progEx ? "selected" : ""}>${esc(e.n)} · ${e.week} ${DAY_NAMES[e.day]}</option>`).join("");
   const sug = ALL_EX[id] ? S.suggestion(state.data.sessions, u, id, v) : null;
   let tiles = "", table = "";
   if (h.length) {
@@ -1397,7 +1519,7 @@ function progHistory() {
   if (!ss.length) return `<section class="card"><p class="muted">No workouts logged yet.</p></section>`;
   return `<section class="card">${ss.slice(0, 60).map(s => {
     const n = (s.exercises || []).filter(e => !e.skipped && e.sets?.length).length;
-    return `<div class="list-item"><div><b>${S.fmtDate(s.date)}</b> · Week ${esc(s.week)} ${esc(s.day)}<div class="small muted">${n} exercises${s.cardio?.done ? ` · ${esc(s.cardio.type)} ${s.cardio.minutes || 0} min` : ""}</div></div>
+    return `<div class="list-item"><div><b>${S.fmtDate(s.date)}</b> · Week ${esc(s.week)} ${esc(DAY_NAMES[s.day] || s.day)}<div class="small muted">${n} exercises${s.cardio?.done ? ` · ${esc(s.cardio.type)} ${s.cardio.minutes || 0} min` : ""}</div></div>
       <div class="row"><button class="btn small" data-act="openDay" data-id="${s.id}">Open</button><button class="btn small danger" data-act="delSession" data-id="${s.id}">${state.confirmDel === s.id ? "Confirm" : "Delete"}</button></div></div>`;
   }).join("")}</section>`;
 }
@@ -1660,7 +1782,18 @@ document.addEventListener("click", e => {
   const el = e.target.closest("[data-act]"); if (!el) return;
   const act = el.dataset.act; const v = el.dataset.v;
   switch (act) {
-    case "newProfile": openProfileForm(null); break;
+    case "newProfile": openOnboarding(null); break;
+    case "obRetake": openOnboarding(state.user); break;
+    case "obNext": if (state.ob.step < OB_STEPS.length - 1) { state.ob.step++; drawOnboarding(); } break;
+    case "obBack": if (state.ob.step > 0) { state.ob.step--; drawOnboarding(); } break;
+    case "obPick": { const k = el.dataset.k; state.ob.a[k] = /^(days|sessionLen)$/.test(k) ? +el.dataset.v : el.dataset.v; drawOnboarding(); break; }
+    case "obToggle": { const k = el.dataset.k, arr = state.ob.a[k], i = arr.indexOf(el.dataset.v);
+      if (i >= 0) arr.splice(i, 1); else if (!(k === "goals" && arr.length >= 3)) arr.push(el.dataset.v); else { toast("Pick up to three."); break; }
+      drawOnboarding(); $(`#overlay [data-act=obToggle][data-k="${k}"][data-v="${el.dataset.v}"]`)?.focus(); break; }
+    case "obNone": state.ob.a[el.dataset.k] = []; drawOnboarding(); break;
+    case "obFinish": finishOnboarding(); break;
+    case "bonusLog": save("activities", `${LU()}-${TODAY()}-bonus`, { user: LU(), date: TODAY(), type: "Bonus session" }); toast("Bonus session logged. Superhuman."); render(); break;
+    case "tailorOff": saveProfile(state.user, { tailorList: [] }); toast("Back to the standard plan. Retake the questionnaire any time."); openSettings(); break;
     case "editProfile": openProfileForm(state.user); break;
     case "pfToggle": { const f = state.profForm[el.dataset.k]; const i = f.indexOf(el.dataset.v); i >= 0 ? f.splice(i, 1) : f.push(el.dataset.v); el.setAttribute("aria-pressed", i < 0); break; }
     case "pfOne": state.profForm[el.dataset.k] = el.dataset.v; el.parentElement.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", b === el)); break;
@@ -1912,6 +2045,12 @@ document.addEventListener("click", e => {
 });
 
 // −15 / +15 on a timed set's timer: changes that set's seconds (and the sets after it that matched).
+// Questionnaire text boxes and checkboxes save into the answers as you type.
+for (const evt of ["input", "change"]) document.addEventListener(evt, e => {
+  const k = e.target.dataset?.ob; if (!k || !state.ob) return;
+  state.ob.a[k] = e.target.type === "checkbox" ? e.target.checked : e.target.value;
+  if (k === "name") { const b = $("#overlay [data-act=obNext]"); if (b) b.disabled = !e.target.value.trim(); }
+});
 document.addEventListener("twp-timer-adj", e => {
   const { key, by, el } = e.detail; if (!key.startsWith("set:")) return;
   const si = +key.split("|")[3]; const setEl = el.closest("[data-ex]")?.querySelector(`.set[data-s="${si}"]`); if (!setEl) return;
@@ -2148,7 +2287,7 @@ if ("serviceWorker" in navigator) {
 // ---------------------------------------------------------------- updates
 // Every time the app opens (or comes back to the front), ask the server which version is live.
 // If it's newer than this copy, throw the old copy away and reload. No buttons needed.
-const SHELL_FILES = ["./", "index.html", "css/styles.css", "js/app.js", "js/plan.js", "js/stats.js", "js/firebase.js", "js/library.js", "js/fun.js", "js/safety.js", "js/timer.js", "js/a11y.js", "js/icons.js", "manifest.webmanifest", "sw.js"];
+const SHELL_FILES = ["./", "index.html", "css/styles.css", "js/app.js", "js/plan.js", "js/stats.js", "js/firebase.js", "js/library.js", "js/fun.js", "js/safety.js", "js/timer.js", "js/a11y.js", "js/icons.js", "js/tailor.js", "manifest.webmanifest", "sw.js"];
 async function liveVersion() {
   try { const r = await fetch(`sw.js?check=${Date.now()}`, { cache: "no-store" }); const m = /VERSION = "twp-v(\d+)"/.exec(await r.text()); return m ? m[1] : null; } catch { return null; }
 }

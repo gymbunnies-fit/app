@@ -283,7 +283,8 @@ export const CARDIO_MACHINES = {
 };
 
 export const DAYS = ["Mon", "Tue", "Wed", "Thu"];
-export const DAY_NAMES = { Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thursday" };
+// Plan days are numbered, not tied to weekdays: do them in order on whatever days you make it to the gym.
+export const DAY_NAMES = { Mon: "Day 1", Tue: "Day 2", Wed: "Day 3", Thu: "Day 4" };
 
 // Every exercise by id, with its week/day.
 export const ALL_EX = {};

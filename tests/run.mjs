@@ -135,13 +135,51 @@ for (const b of BUILTIN) {
   // Last week: Week A Wed, Thu, and Mon (made up Friday). Week A Tue never done.
   const lastWeek = [s("2026-09-30", "A", "Wed"), s("2026-10-01", "A", "Thu"), s("2026-10-02", "A", "Mon")];
   const pd = (sessions, today) => { const r = S.pickDay(sessions, "mat", today, "2026-09-28"); return r.week + r.day; };
-  yes("Tue of Week B (Mon skipped) opens Week B Tue, not leftover Week A Tue", pd(lastWeek, "2026-10-06") === "BTue");
-  const midWeek = [...lastWeek, s("2026-10-06", "B", "Tue"), s("2026-10-07", "B", "Wed"), s("2026-10-08", "B", "Thu")];
-  yes("Friday after skipping Monday opens Week B Mon", pd(midWeek, "2026-10-09") === "BMon");
-  yes("a workout logged today keeps that day open", pd([...midWeek, s("2026-10-09", "B", "Mon")], "2026-10-09") === "BMon");
-  yes("whole week done on Friday opens next week's Mon", pd([...midWeek, s("2026-10-05", "B", "Mon")], "2026-10-09") === "AMon");
-  yes("Sunday before a new cycle opens Week A Mon", pd(lastWeek, "2026-10-11") === "BMon" || pd(lastWeek, "2026-10-11") === "AMon");
-  yes("Monday of Week A in a new cycle opens Week A Mon", pd(midWeek, "2026-10-12") === "AMon");
+  yes("Tuesday of Week B with Monday skipped opens Day 1 (Week B Mon)", pd(lastWeek, "2026-10-06") === "BMon");
+  const d1 = [...lastWeek, s("2026-10-06", "B", "Mon")];
+  yes("skip Wednesday, go Thursday: opens Day 2", pd(d1, "2026-10-08") === "BTue");
+  const midWeek = [...d1, s("2026-10-08", "B", "Tue"), s("2026-10-09", "B", "Wed")];
+  yes("a workout logged today keeps that day open", pd(midWeek, "2026-10-09") === "BWed");
+  yes("next visit that week opens Day 4", pd(midWeek, "2026-10-10") === "BThu");
+  const full = [...midWeek, s("2026-10-10", "B", "Thu")];
+  yes("all four done: stays on the last one, week complete", pd(full, "2026-10-11") === "BThu" && S.pickDay(full, "mat", "2026-10-11", "2026-09-28").complete);
+  yes("new week starts at Day 1 even with days missed last week", pd(d1, "2026-10-12") === "AMon");
+  yes("Week A Monday of a new cycle opens Day 1", pd(full, "2026-10-12") === "AMon");
+  yes("a day from last cycle doesn't count this cycle", pd([s("2026-09-28", "A", "Mon")], "2026-10-13") === "AMon");
+  yes("marked done counts as done", pd([{ user: "mat", date: "2026-10-12", week: "A", day: "Mon", markedDone: true }], "2026-10-13") === "ATue");
+  yes("ex-map sessions count as done", pd([{ user: "mat", date: "2026-10-12", week: "A", day: "Mon", ex: { a: { sets: [{ w: 1, r: 1 }] } } }], "2026-10-13") === "ATue");
+}
+// Tailoring from the questionnaire.
+{
+  const TL = await import(join(dir, "tailor.js"));
+  const { ALL_EX } = await import(join(dir, "plan.js"));
+  const { safetyFor } = await import(join(dir, "safety.js"));
+  const { BUILTIN } = await import(join(dir, "library.js"));
+  const none = TL.tailorPlan({ injuries: [], limits: [], experience: "some" });
+  yes("no injuries, some experience: standard plan unchanged", Object.keys(none).length === 0);
+  const vet = TL.tailorPlan({ injuries: [], limits: [], experience: "veteran" });
+  yes("veteran: harder versions picked", Object.values(vet).length > 10 && Object.values(vet).every(t => t.v === "hard"));
+  for (const prof of [{ injuries: ["knees"], limits: ["noFloor"], experience: "some" }, { injuries: ["shoulders", "lowerBack"], limits: [], experience: "new" },
+    { injuries: ["wrists", "elbows", "foot"], limits: ["noOverhead", "noImpact", "grip", "balance"], experience: "regular", intensity: "push" }]) {
+    const t = TL.tailorPlan(prof);
+    yes(`${JSON.stringify(prof)}: something tailored`, Object.keys(t).length > 0);
+    for (const [id, x] of Object.entries(t)) {
+      const ex = ALL_EX[id];
+      yes(`${id} → ${x.v} exists`, x.v === "hard" ? !!ex.h : x.v === "swap" ? !!ex.swap : BUILTIN.some(b => `lib:${b.id}` === x.v));
+      yes(`${id} has a reason`, typeof x.why === "string" && x.why.length > 5);
+      if (x.v !== "hard" && prof.injuries.length) {
+        const before = safetyFor(ex, "std")?.joints || {}, after = x.v === "swap" ? safetyFor(ex, "swap")?.joints || {} : BUILTIN.find(b => `lib:${b.id}` === x.v).joints;
+        const load = j => prof.injuries.map(a => a === "foot" ? "ankles" : a).reduce((n, a) => n + (j[a] || 0), 0);
+        yes(`${id} is no harder on the injured areas`, load(after) <= load(before) || (prof.limits || []).length > 0);
+      }
+    }
+    // never the same exercise twice in a day
+    const days = {};
+    for (const ex of Object.values(ALL_EX)) { const x = t[ex.id]; const nm = !x ? ex.n : x.v === "hard" ? ex.h.n : x.v === "swap" ? ex.swap.n : BUILTIN.find(b => `lib:${b.id}` === x.v).name; (days[ex.week + ex.day] ||= []).push(nm.toLowerCase()); }
+    for (const [d, names] of Object.entries(days)) yes(`${d}: no duplicates`, new Set(names).size === names.length);
+  }
+  const noFloor = TL.tailorPlan({ injuries: [], limits: ["noFloor"], experience: "some" });
+  yes("no floor work: Dead Bug replaced", !!noFloor["a-thu-bug"]);
 }
 // ---------------------------------------------------------------- accessibility settings
 {

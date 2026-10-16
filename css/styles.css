@@ -803,3 +803,26 @@ body:is([data-skin="bunny"],[data-skin="lanai"]) .chips.day-tiles button[aria-pr
 body.kb-open nav.tabs{display:none}
 body.kb-open{padding-bottom:16px}
 nav.tabs{transform:translateZ(0)}
+/* Day tiles: done (with date), missed, up next */
+.day-tiles button.done .today-dot,.day-tiles button.missed .today-dot{color:var(--muted)}
+.day-tiles button.missed .m{opacity:.6}
+.day-tiles button.next:not([aria-pressed="true"]){border-color:var(--accent)}
+/* Onboarding questionnaire */
+.ob .inner{display:grid;gap:16px}
+.ob-progress{height:6px;background:var(--line);border-radius:99px;overflow:hidden}
+.ob-progress i{display:block;height:100%;background:var(--accent)}
+.ob-q{margin:4px 0 0}
+.ob-sub{margin-top:8px}
+.ob-chips button{font-size:.95rem;min-height:44px;padding:8px 14px}
+.ob-choices{display:grid;gap:8px}
+.ob-choices button{display:grid;gap:2px;text-align:left;border:1.5px solid var(--line);background:var(--surface);color:var(--ink);border-radius:14px;padding:12px 14px;min-height:52px;font:inherit}
+.ob-choices button small{color:var(--muted);font-size:.85rem}
+.ob-choices button[aria-checked="true"]{border:2px solid var(--accent);background:var(--accent-soft)}
+.ob-days{display:grid;grid-template-columns:repeat(7,1fr)}
+.ob-days button{min-height:48px;font-weight:700}
+.ob-days button[aria-checked="true"]{background:var(--accent);color:var(--on-accent,#fff)}
+.ob-nav{display:flex;justify-content:space-between;gap:12px;position:sticky;bottom:0;background:var(--bg);padding:12px 0 calc(env(safe-area-inset-bottom,0px) + 4px)}
+.ob-nav .btn{min-height:48px;min-width:120px}
+.ob-list{display:grid;gap:10px;padding-left:18px;margin:0}
+.tailor-note{color:var(--accent-text);margin:6px 0 0}
+.ob-sum p{margin:4px 0}

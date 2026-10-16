@@ -29,27 +29,24 @@ export function cycleInfo(date, cycleStart) {
   return { index: idx, start, end: addDays(start, 13), week: ((weeks % 2) + 2) % 2 === 0 ? "A" : "B" };
 }
 
-// Which plan day the Workout tab opens on.
-//  1. A workout already logged today: that day.
-//  2. Today's own plan day (Mon–Thu of this cycle week), if it isn't done yet.
-//  3. The first day of this cycle week that isn't done (a skipped Monday comes up on Friday).
-//  4. This week all done: next week's Monday.
-// Days missed in an earlier week don't pull you back; you can always tap them.
+// Which plan day to open. Each week (Mon–Sun) has four days done in order: Day 1, Day 2, Day 3, Day 4,
+// whatever calendar day you actually show up. Open the first one not done yet this week.
+// A workout logged today stays open. When all four are done, show the last one (the week is complete).
+// Unfinished days from an earlier week are skipped (shown as missed), and each new week starts at Day 1.
+const DN = { Mon: "Day 1", Tue: "Day 2", Wed: "Day 3", Thu: "Day 4" };
 export function pickDay(sessions, user, today, cycleStart) {
   const DAYS = ["Mon", "Tue", "Wed", "Thu"];
-  const logged = x => (x.exercises || []).some(e => e.sets?.length) || !!x.markedDone;
-  const mine = sessions.filter(x => x.user === user);
+  const logged = x => (x.exercises || []).some(e => e.sets?.length) || !!x.markedDone || Object.values(x.ex || {}).some(e => e?.sets?.length);
   const cyc = cycleInfo(today, cycleStart);
-  // Only a workout from this week's plan counts here; one saved under an earlier week's day doesn't pull the app back.
-  const todays = mine.find(x => x.date === today && x.week === cyc.week && x.day && logged(x));
-  if (todays) return { week: todays.week, day: todays.day };
-  const done = new Set(mine.filter(x => x.date >= cyc.start && x.date <= cyc.end && logged(x)).map(x => `${x.week}${x.day}`));
   const week = cyc.week;
-  const dow = (parseYmd(today).getDay() + 6) % 7; // Mon = 0
-  if (dow <= 3 && !done.has(`${week}${DAYS[dow]}`)) return { week, day: DAYS[dow] };
-  const open = DAYS.find(d => !done.has(`${week}${d}`));
+  const mine = sessions.filter(x => x.user === user && x.week === week && x.day && x.date >= cyc.start && x.date <= cyc.end && logged(x));
+  const todays = mine.find(x => x.date === today);
+  if (todays) return { week, day: todays.day };
+  const done = new Set(mine.map(x => x.day));
+  const open = DAYS.find(d => !done.has(d));
   if (open) return { week, day: open };
-  return { week: cycleInfo(addDays(mondayOf(today), 7), cycleStart).week, day: "Mon" };
+  const last = mine.sort((a, b) => b.date.localeCompare(a.date) || DAYS.indexOf(b.day) - DAYS.indexOf(a.day))[0];
+  return { week, day: last?.day || "Thu", complete: true };
 }
 
 // ---- sets --------------------------------------------------------------
@@ -308,7 +305,7 @@ export function reportText(r) {
   L.push("");
   L.push("EVERY WORKOUT THIS CYCLE (weight × reps per set, felt E/R/H = easy/right/hard):");
   for (const d of r.detail) {
-    L.push(`${d.date} — Week ${d.week} ${d.day}:`);
+    L.push(`${d.date} — Week ${d.week} ${DN[d.day] || d.day}:`);
     for (const e of d.exercises) L.push(`- ${e.name}${e.variant === "hard" ? " (harder)" : e.variant === "swap" ? " (swap)" : String(e.variant).startsWith("lib:") ? ` (library swap for ${ALL_EX[e.id]?.n || "planned exercise"})` : e.added ? " (added)" : ""}: ${setsText(e)}`);
     if (d.cardio) L.push(`- Cardio: ${d.cardio.type || "?"}, ${d.cardio.minutes || 0} min${d.cardio.miles ? `, ${d.cardio.miles} mi` : ""}${d.cardio.avgHr ? `, avg HR ${d.cardio.avgHr}` : ""}${d.cardio.hiit ? ", intervals" : ""}`);
     if (d.notes) L.push(`- Notes: ${d.notes}`);
@@ -316,7 +313,7 @@ export function reportText(r) {
   L.push("");
   L.push("PAIN (0–10, average / max):");
   Object.entries(r.pain).forEach(([a, v]) => L.push(`- ${PAIN_AREAS[a]}: ${v ? `${v.avg} / ${v.max}` : "not logged"}`));
-  if (r.painDays.length) { L.push("Days with pain 4+:"); r.painDays.forEach(d => L.push(`- ${d.date} (${d.day}): ${d.areas.join(", ")}. Exercises: ${d.exercises.join(", ")}`)); }
+  if (r.painDays.length) { L.push("Days with pain 4+:"); r.painDays.forEach(d => L.push(`- ${d.date} (${DN[d.day] || d.day}): ${d.areas.join(", ")}. Exercises: ${d.exercises.join(", ")}`)); }
   L.push("");
   const tot = r.diff[1] + r.diff[2] + r.diff[3];
   if (tot) L.push(`Set difficulty: ${Math.round(r.diff[1] / tot * 100)}% easy, ${Math.round(r.diff[2] / tot * 100)}% just right, ${Math.round(r.diff[3] / tot * 100)}% hard.`);
