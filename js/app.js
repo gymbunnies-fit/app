@@ -1,9 +1,9 @@
-// Two-Week Split — app shell, views and events.
+// GymBunnies.fit — app shell, views and events.
 import { PROFILES as SEEDS, PLAN, STRETCH, CARDIO, CARDIO_MACHINES, DAYS, DAY_NAMES, ALL_EX, FOCUS, PAIN_AREAS, variantDef, exDef } from "./plan.js";
 import * as F from "./fun.js";
 import * as T from "./timer.js";
 import * as A from "./a11y.js";
-import { icon, play } from "./icons.js";
+import { icon, play, ears } from "./icons.js";
 import { safetyFor } from "./safety.js";
 import * as S from "./stats.js";
 import { BUILTIN, GYM, EQUIP, PATTERN, JOINTS, POSITION, LEVEL, PLAN_PATTERN, PLAN_MACHINES, STRETCH_BY_FOCUS, normalizeLib } from "./library.js";
@@ -12,9 +12,9 @@ import { connect, save, remove, patch, dropField, signOutAndClear, importAll, CO
 
 // ---------------------------------------------------------------- helpers
 // Shown at the bottom of Settings so you can tell whether a phone has the latest update. Bump with sw.js VERSION.
-const APP_VERSION = "24";
+const APP_VERSION = "25";
 // The app's name lives here only (plus manifest.webmanifest and the <title> tags in index.html, which can't read JS).
-const APP_NAME = "Two-Week Split";
+const APP_NAME = "GymBunnies.fit";
 const $ = (s, r = document) => r.querySelector(s);
 // "a", "a and b", "a, b, and c" (Oxford comma)
 const listText = (xs, word = "and") => xs.length < 3 ? xs.join(` ${word} `) : `${xs.slice(0, -1).join(", ")}, ${word} ${xs[xs.length - 1]}`;
@@ -1567,9 +1567,9 @@ function drawTimer() {
 function closeOverlay() { T.stop("rest"); state.timer = null; state.overlay = null; $("#overlay").innerHTML = ""; }
 
 function exportData() {
-  const data = { app: "two-week-split", exportedAt: new Date().toISOString(), ...state.data };
+  const data = { app: "gymbunnies.fit", exportedAt: new Date().toISOString(), ...state.data };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `two-week-split-backup-${TODAY()}.json`;
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `gymbunnies-fit-backup-${TODAY()}.json`;
   document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
 }
 
@@ -2096,7 +2096,8 @@ function viewSignIn() {
   </section>`;
 }
 function logoHtml(size = "") {
-  return `<div class="brand-logo ${size}"><img class="on-light" src="icons/logo-dark-text.png" alt="Fitness for Faggy Bunnies"><img class="on-dark" src="icons/logo-light-text.png" alt="Fitness for Faggy Bunnies"></div>`;
+  // Placeholder until the new sign-in logo is ready: the bunny ears and the name.
+  return `<div class="brand-logo wordmark ${size}">${ears(size === "small" ? 44 : 64, size === "small" ? 34 : 50)}<span class="brand-name">${APP_NAME}</span></div>`;
 }
 function viewCrewSetup() {
   const a = state.auth;
@@ -2108,7 +2109,7 @@ function viewCrewSetup() {
       <label class="field">Invite code<input type="text" id="crew-code" autocapitalize="characters" maxlength="6" placeholder="ABC123" style="font-family:var(--mono);letter-spacing:.2em;text-transform:uppercase"></label>
       <button class="btn primary block" data-act="crewJoin" ${a.busy ? "disabled" : ""}>Join crew</button></section>
     <section class="card" style="text-align:left"><h3 class="h3">Start a new crew</h3>
-      <label class="field">Crew name<input type="text" id="crew-name" placeholder="Fitness for Faggy Bunnies"></label>
+      <label class="field">Crew name<input type="text" id="crew-name" placeholder="Your crew's name"></label>
       <button class="btn block" data-act="crewCreate" ${a.busy ? "disabled" : ""}>Create crew</button></section>
     <button class="btn small" data-act="authSignOut">Sign out</button>
   </section>`;

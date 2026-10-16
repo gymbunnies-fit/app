@@ -297,7 +297,7 @@ export function setsText(e) {
 export function reportText(r) {
   const p = getProfile(r.user);
   const L = [];
-  L.push(`Two-Week Split — end-of-cycle report for ${p.name}`);
+  L.push(`GymBunnies.fit — end-of-cycle report for ${p.name}`);
   L.push(`Cycle: ${r.start} to ${r.end}. Goals: ${p.focusNote}`);
   const inProgress = r.today && r.today < r.end;
   L.push(inProgress ? `Cycle in progress. Workout days logged: ${r.sessions} of ${r.soFar} so far (${r.planned} in the full cycle).` : `Workout days logged: ${r.sessions} of ${r.planned}.`);
@@ -327,7 +327,7 @@ export function reportText(r) {
   const rc = r.recovery;
   if (rc.sleep || rc.energy || rc.soreness) L.push(`Recovery averages (1–5): sleep ${rc.sleep ?? "–"}, energy ${rc.energy ?? "–"}, soreness ${rc.soreness ?? "–"}.`);
   L.push("");
-  L.push("Please suggest adjustments to my Two-Week Split for the next cycle based on this.");
+  L.push("Please suggest adjustments to my two-week workout plan for the next cycle based on this.");
   return L.join("\n");
 }
 

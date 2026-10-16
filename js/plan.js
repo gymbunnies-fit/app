@@ -1,4 +1,4 @@
-// Two-Week Split — plan data for both profiles.
+// GymBunnies.fit — plan data for both profiles.
 // Edit this file on GitHub to change exercises. Keep each exercise `id` stable:
 // logged history is matched to exercises by id.
 

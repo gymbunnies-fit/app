@@ -1,4 +1,4 @@
-/* Two-Week Split — phone-first gym log.
+/* GymBunnies.fit — phone-first gym log.
    Layout: sticky header, one scrolling view, fixed bottom tab bar. */
 :root{
   --bg:#eceee9; --surface:#f8f9f6; --inset:#e3e7e1; --ink:#1d2427; --muted:#5d686c; --line:#d3d8d2;
@@ -387,6 +387,11 @@ body[data-skin="clean"] h1,body[data-skin="clean"] .h2,body[data-skin="clean"] .
 .brand-logo{display:grid;justify-items:center;margin:0 auto}
 .brand-logo img{width:min(320px,80vw);height:auto}
 .brand-logo.small img{width:min(220px,60vw)}
+.brand-logo.wordmark{gap:10px}
+.brand-logo .brand-mark{width:72px;height:56px;margin:0}
+.brand-logo.small .brand-mark{width:52px;height:40px}
+.brand-logo .brand-name{font:700 clamp(1.9rem,9vw,2.6rem)/1.1 var(--display);color:var(--ink);letter-spacing:-.01em}
+.brand-logo.small .brand-name{font-size:1.6rem}
 .brand-logo .on-dark{display:none}
 body[data-tone="dark"] .brand-logo .on-light{display:none}
 body[data-tone="dark"] .brand-logo .on-dark{display:block}

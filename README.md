@@ -1,4 +1,4 @@
-# Two-Week Split
+# GymBunnies.fit
 
 Benny and Mat's Monday–Thursday workout plan and tracker. It runs on GitHub Pages and saves workouts to Firebase, so both phones stay in sync.
 
@@ -84,7 +84,7 @@ Edit `js/plan.js` on GitHub. Keep each exercise's `id` the same, since logged hi
 
 ## Setup
 1. **Firebase → Authentication → Sign-in method:** turn on **Google** and **Email/Password**. (Anonymous can be turned off.)
-2. **Firebase → Authentication → Settings → Authorized domains:** add `fitness-for-faggy-bunnies.github.io`.
+2. **Firebase → Authentication → Settings → Authorized domains:** add `gymbunnies.fit` and `www.gymbunnies.fit` (and keep `fitness-for-faggy-bunnies.github.io`).
 3. **Firestore → Rules:** paste the contents of `firestore.rules` and publish.
 4. **GitHub Pages:** repo Settings → Pages → Deploy from a branch → `main` / root.
 
