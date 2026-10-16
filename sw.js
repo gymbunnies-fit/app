@@ -1,10 +1,10 @@
 // Offline support: the app shell is cached so it opens with no signal.
 // Workout data is handled separately by Firestore's own offline cache.
 // Bump VERSION whenever you change files, so phones pick up the update.
-const VERSION = "twp-v32";
+const VERSION = "twp-v33";
 const SHELL = [
   "./", "index.html", "css/styles.css",
-  "js/app.js", "js/plan.js", "js/stats.js", "js/firebase.js", "js/library.js", "js/fun.js", "js/safety.js", "js/timer.js", "js/a11y.js", "js/icons.js", "js/tailor.js",
+  "js/app.js", "js/plan.js", "js/stats.js", "js/firebase.js", "js/library.js", "js/fun.js", "js/safety.js", "js/timer.js", "js/a11y.js", "js/icons.js", "js/tailor.js", "js/program.js",
   "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png", "icons/favicon.svg", "favicon.ico", "icons/logo-oneline-dark.svg", "icons/logo-oneline-light.svg", "icons/logo-primary-dark.svg", "icons/logo-primary-light.svg",
   "fonts/atkinson-hyperlegible-latin-400-normal.woff2", "fonts/atkinson-hyperlegible-latin-700-normal.woff2", "fonts/lexend-latin-400-normal.woff2", "fonts/lexend-latin-700-normal.woff2", "fonts/opendyslexic-latin-400-normal.woff2", "fonts/opendyslexic-latin-700-normal.woff2"
 ];

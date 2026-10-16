@@ -4,6 +4,7 @@ import * as F from "./fun.js";
 import * as T from "./timer.js";
 import * as A from "./a11y.js";
 import * as TL from "./tailor.js";
+import * as PG from "./program.js";
 import { icon, play } from "./icons.js";
 import { safetyFor } from "./safety.js";
 import * as S from "./stats.js";
@@ -13,7 +14,7 @@ import { connect, save, remove, patch, dropField, signOutAndClear, importAll, CO
 
 // ---------------------------------------------------------------- helpers
 // Shown at the bottom of Settings so you can tell whether a phone has the latest update. Bump with sw.js VERSION.
-const APP_VERSION = "32";
+const APP_VERSION = "33";
 // The app's name lives here only (plus manifest.webmanifest and the <title> tags in index.html, which can't read JS).
 const APP_NAME = "GymBunnies.fit";
 const $ = (s, r = document) => r.querySelector(s);
@@ -94,6 +95,31 @@ function resolveEx(id, entry) {
   if (id.startsWith("lib-")) { const m = libItem(id.slice(4)); if (m) return libEx(m); }
   return exDef(id, entry);
 }
+// ---------------------------------------------------------------- each person's days
+// Mat and Benny (and anyone who trains 4 days, split) use the original plan: Monday–Thursday keys, shown as Day 1–4.
+// Everyone else gets a plan built from their questionnaire (program.js): keys D1…D7. "Home" is the at-home workout.
+const progMemo = new WeakMap();
+function progOf(u) {
+  const p = P(u); let m = progMemo.get(p);
+  if (!m) { m = { A: PG.buildWeek(p, "A"), B: PG.buildWeek(p, "B"), homeA: PG.buildHome(p, "A"), homeB: PG.buildHome(p, "B") }; progMemo.set(p, m); }
+  return m;
+}
+const curWeek = () => state.sel?.week || S.cycleInfo(TODAY(), cycleStart()).week;
+function daysFor(u, week = curWeek()) { const w = progOf(u)[week]; return w ? w.map(d => d.key) : DAYS; }
+function planDay(u, week, day) {
+  const m = progOf(u);
+  if (day === "Home") { const h = week === "B" ? m.homeB : m.homeA; return { title: h.title, ex: h.ex.map(id => resolveEx(id, {})).filter(Boolean) }; }
+  const d = m[week]?.find(x => x.key === day);
+  if (d) return { title: d.title, ex: d.ex.map(id => resolveEx(id, {})).filter(Boolean) };
+  return PLAN[week][day] || PLAN[week].Mon;
+}
+const dayName = day => (day === "Home" ? "Home workout" : DAY_NAMES[day] || (/^D\d$/.test(day || "") ? `Day ${day.slice(1)}` : day || ""));
+// The original plan day a built day is closest to (for warm-ups and the interval-cardio schedule).
+function baseDay(u, week, day) {
+  if (DAYS.includes(day)) return day;
+  const t = planDay(u, week, day).title || "";
+  return /chest|upper|push/i.test(t) ? "Mon" : /back|pull/i.test(t) ? "Tue" : /leg|glute|lower/i.test(t) ? "Wed" : /core|recovery/i.test(t) ? "Thu" : "Mon";
+}
 // Per-person plan changes: settings doc plan_<user> = { days: { "A-Mon": { add: [ids], remove: [ids] } } }
 const planEdits = u => state.data.settings.find(x => x.id === `plan_${u}`)?.days || {};
 function editPlan(users, weeks, day, fn) {
@@ -153,9 +179,12 @@ const LD = () => (state.sel ? sessionFor(LU(), BASE_DATE())?.date : null) || BAS
 // The calendar date each plan day lands on in the current cycle (Week A Mon = the cycle start).
 function slotDate(week, day) {
   const cyc = S.cycleInfo(BASE_DATE(), cycleStart());
-  return S.addDays(cyc.start, (week === "B" ? 7 : 0) + DAYS.indexOf(day));
+  if (day === "Home") return BASE_DATE();
+  return S.addDays(cyc.start, (week === "B" ? 7 : 0) + Math.max(0, daysFor(LU(), week).indexOf(day)));
 }
-function autoSel() { return S.pickDay(state.data.sessions, LU(), TODAY(), cycleStart()); }
+// The next plan day to do, ignoring a home workout (which never stands in for a plan day).
+function nextPlanDay() { const wk = S.cycleInfo(TODAY(), cycleStart()).week; return S.pickDay(state.data.sessions.filter(x => x.day !== "Home"), LU(), TODAY(), cycleStart(), daysFor(LU(), wk)); }
+function autoSel() { const wk = S.cycleInfo(TODAY(), cycleStart()).week; return S.pickDay(state.data.sessions, LU(), TODAY(), cycleStart(), daysFor(LU(), wk)); }
 // Weekly goal from the questionnaire (3 if they haven't taken it), and days with a bonus session logged.
 const paceOf = u => +P(u).daysPerWeek || 3;
 const bonusDates = u => state.data.activities.filter(a => a.user === u && /^Bonus/.test(a.type || "")).map(a => a.date);
@@ -167,8 +196,8 @@ function dayStatus(u, week, day) {
   if (hit) return { state: "done", date: hit.date };
   if (S.addDays(slotDate(week, "Mon"), 6) >= TODAY()) return { state: "open" };
   // The week is over. If they hit their weekly goal, the rest weren't "missed", just extras they skipped.
-  const doneCount = DAYS.filter(d => d !== day && state.data.sessions.some(x => x.user === u && x.week === week && x.day === d && x.date >= cyc.start && x.date <= cyc.end && ((x.exercises || []).some(e => e.sets?.length) || x.markedDone))).length;
-  return { state: doneCount >= Math.min(4, paceOf(u)) ? "skipped" : "missed" };
+  const doneCount = daysFor(u, week).filter(d => d !== day && state.data.sessions.some(x => x.user === u && x.week === week && x.day === d && x.date >= cyc.start && x.date <= cyc.end && ((x.exercises || []).some(e => e.sets?.length) || x.markedDone))).length;
+  return { state: doneCount >= Math.min(daysFor(u, week).length, paceOf(u)) ? "skipped" : "missed" };
 }
 const variantOf = (u, ex) => state.variants[`${u}:${ex.id}`] || tailoredV(u, ex) || (P(u).defaultVariant === "hard" && ex.h ? "hard" : "std");
 // The version the questionnaire picked for this person, if it still exists.
@@ -187,7 +216,7 @@ const sid = (u, date, sel = state.sel) => `${u}_${date}_${slotKey(sel)}`;
 function sessionFor(u, date, sel = state.sel) {
   if (!sel) return state.data.sessions.find(s => s.user === u && s.date === date) || null;
   const cyc = S.cycleInfo(date, cycleStart());
-  const hits = state.data.sessions.filter(s => s.user === u && s.week === sel.week && s.day === sel.day && s.date >= cyc.start && s.date <= cyc.end);
+  const hits = state.data.sessions.filter(s => s.user === u && s.week === sel.week && s.day === sel.day && s.date >= cyc.start && s.date <= cyc.end && (sel.day !== "Home" || s.date === date));
   return hits.find(s => s.date === date) || hits.sort((a, b) => b.date.localeCompare(a.date) || (b.updatedAt || 0) - (a.updatedAt || 0))[0] || null;
 }
 // Something else (another week/day) was logged on this date: used so today's bike commute doesn't show on other days.
@@ -225,8 +254,10 @@ function relabel() {
   if (relabeling || state.flags.sessions?.fromCache) return;
   relabeling = true;
   // A record holding exercises from two plan days (from the early date-only version) is split so each day gets its own.
+  // Only the original plan's days are relabeled; built plans and home workouts reuse exercises across days.
+  const legacySlot = s => DAYS.includes(s.day) && !PG.usesProgram(P(s.user));
   for (const s of [...state.data.sessions]) {
-    if (s.moved) continue;
+    if (s.moved || !legacySlot(s)) continue;
     const bySlot = {};
     for (const e of s.exercises || []) { const m = SLOT_RE.exec(e.id || ""); if (m && e.sets?.length) (bySlot[`${m[1].toUpperCase()}|${m[2][0].toUpperCase()}${m[2].slice(1)}`] ||= []).push(e); }
     const slots = Object.keys(bySlot); if (slots.length < 2) continue;
@@ -245,7 +276,7 @@ function relabel() {
   }
   for (const s of state.data.sessions) {
     const r = inferredSlot(s);
-    if (r && !s.moved && (r.week !== s.week || r.day !== s.day)) { s.week = r.week; s.day = r.day; patch("sessions", s.id, { week: r.week, day: r.day }); }
+    if (r && !s.moved && legacySlot(s) && (r.week !== s.week || r.day !== s.day)) { s.week = r.week; s.day = r.day; patch("sessions", s.id, { week: r.week, day: r.day }); }
   }
   relabeling = false;
 }
@@ -309,7 +340,7 @@ function todaysList(u, date) {
   const { week, day } = state.sel;
   const s = sessionFor(u, date);
   const edits = dayEdits(u, week, day);
-  const list = PLAN[week][day].ex.filter(ex => !edits.remove.includes(ex.id)).map(ex => ({ ex, added: false }));
+  const list = planDay(u, week, day).ex.filter(ex => !edits.remove.includes(ex.id)).map(ex => ({ ex, added: false }));
   for (const id of edits.add) { const ex = resolveEx(id, {}); if (ex && !ex.custom) list.push({ ex, added: false, planned: true }); }
   if (edits.order?.length) list.sort((a, b) => { const ia = edits.order.indexOf(a.ex.id), ib = edits.order.indexOf(b.ex.id); return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib); });
   const ids = new Set(list.map(x => x.ex.id));
@@ -345,6 +376,8 @@ function render() {
   const who = $("#who"); who.classList.remove("hidden"); who.innerHTML = avatarHtml(state.user, false, true) + `<span class="who-name">${esc(P(state.user).name)}${state.partner ? " + " + esc(P(other(state.user)).name) : ""}</span>`; updateSync();
   document.querySelectorAll("#tabs button").forEach(b => { if (b.dataset.view === state.view) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); });
   // Pick the day to open on. Until workouts have loaded (and unless you've tapped a day), keep re-picking.
+  // Switched to someone with different days (say, from a 4-day plan to a 2-day one): start them on their own day.
+  if (state.sel && state.sel.day !== "Home" && !daysFor(LU(), state.sel.week).includes(state.sel.day)) { state.sel = null; state.userTouchedSel = false; }
   if (!state.sel || (!state.selSettled && !state.userTouchedSel)) {
     // Logging a past date: open that date's workout. Otherwise the plan day for today's date.
     const s = state.logDate ? sessionFor(LU(), BASE_DATE(), null) : null;
@@ -388,31 +421,33 @@ function viewToday() {
   const partner = other(u);
   return `
   ${state.partner ? `<section class="card"><span class="eyebrow">Partner mode · logging for</span>${personToggle("logUser", u)}</section>` : ""}
-  ${state.logDate ? `<div class="banner">Logging for ${S.fmtDate(date)}. <button class="btn small" data-act="backToToday">Back to today</button></div>` : notToday ? `<div class="banner">Week ${esc(week)} ${esc(DAY_NAMES[day])} was logged on ${S.fmtDate(date)}.</div>` : ""}
+  ${state.logDate ? `<div class="banner">Logging for ${S.fmtDate(date)}. <button class="btn small" data-act="backToToday">Back to today</button></div>` : notToday ? `<div class="banner">Week ${esc(week)} ${esc(dayName(day))} was logged on ${S.fmtDate(date)}.</div>` : ""}
   ${rem.length && !focusOn() ? `<section class="reminders" aria-labelledby="rem-title"><h2 class="rem-title" id="rem-title">${icon("pulse", 16, { stroke: 2 })}${rem.every(r => r.id === "weigh" || r.id === "measure") ? "Set your starting point" : "Reminders"}</h2>${rem.map(r => `<div class="rem"><p>${esc(r.text)}</p><button class="btn pill" data-act="goView" data-v="${r.view}">Open</button><button class="icon-btn round ghost" data-act="dismissRem" data-v="${r.id}" aria-label="Dismiss until tomorrow: ${esc(r.text)}">${icon("x", 18, { stroke: 2 })}</button></div>`).join("")}</section>` : ""}
   ${(() => { const sd = slotDate(week, day); const any = s && ((s.exercises || []).some(e => e.sets?.length) || s.markedDone);
     if (s?.markedDone && !(s.exercises || []).some(e => e.sets?.length)) return `<div class="banner">Marked done. No sets were logged for this day. <button class="btn small" data-act="unmarkDone">Undo</button></div>`;
     const weekOver = S.addDays(slotDate(week, "Mon"), 6) < TODAY();
-    if (!any && weekOver && dayStatus(u, week, day).state === "missed") return `<div class="banner">${DAY_NAMES[day]} was missed the week of ${S.fmtDate(slotDate(week, "Mon"))}. If you did it but didn't log it, <button class="btn small" data-act="markDone">Mark it done</button></div>`;
+    if (!any && weekOver && dayStatus(u, week, day).state === "missed") return `<div class="banner">${dayName(day)} was missed the week of ${S.fmtDate(slotDate(week, "Mon"))}. If you did it but didn't log it, <button class="btn small" data-act="markDone">Mark it done</button></div>`;
     const pick = autoSel();
     if (pick.complete && pick.week === week && ci.week === week) {
-      const extra = paceOf(u) > 4, bonusToday = bonusDates(u).includes(TODAY());
-      return `<div class="banner">All four days done this week. Week ${week === "A" ? "B" : "A"} starts Monday at Day 1.${extra ? ` Going for ${paceOf(u)} days? Bonus days: 20–30 minutes of cardio, plus core work or the stretches. ${bonusToday ? "<b>Bonus session logged today.</b>" : `<button class="btn small" data-act="bonusLog">Log a bonus session today</button>`}` : ""}</div>`;
+      const n = daysFor(u, week).length, bonusToday = bonusDates(u).includes(TODAY());
+      return `<div class="banner">All ${n === 1 ? "of this week's workout" : n + " days"} done this week. Week ${week === "A" ? "B" : "A"} starts Monday at Day 1.${n < 7 ? ` Want a bonus day? Do the home workout, or 20–30 minutes of cardio plus some stretching. <span class="row" style="margin-top:8px"><button class="btn small" data-act="selDay" data-v="Home">Home workout</button>${bonusToday ? "<b>Bonus logged today.</b>" : `<button class="btn small" data-act="bonusLog">Log bonus cardio</button>`}</span>` : ""}</div>`;
     }
     return ""; })()}
   ${dl ? `<div class="banner"><b>Lighter week</b> until ${S.fmtDate(deloadOf(u).to)}: about 60% of your usual weights and one less set. <button class="btn small" data-act="endDeload">End it early</button></div>` : dlSug ? `<div class="banner">${esc(dlSug)} <button class="btn small" data-act="startDeload">Start a lighter week</button></div>` : ""}
   <section class="today-top" aria-labelledby="today-title">
     <div class="week-row"><span class="eyebrow">${ci.week === week ? "This week" : "Week " + week} · ${S.fmtDate(slotDate(week, "Mon"))} to ${S.fmtDate(S.addDays(slotDate(week, "Mon"), 6))}</span>${seg("selWeek", week, [["A", "Week A"], ["B", "Week B"]], "Week")}</div>
-    <div class="chips day-tiles" role="group" aria-label="Day">${(() => { const nx = autoSel(); return DAYS.map(d => { const ds = dayStatus(u, week, d); const next = ci.week === week && !nx.complete && nx.day === d && ds.state !== "done";
+    <div class="chips day-tiles" role="group" aria-label="Day" style="--cols:${Math.min(4, daysFor(u, week).length)}">${(() => { const nx = nextPlanDay(); return daysFor(u, week).map(d => { const ds = dayStatus(u, week, d); const next = ci.week === week && !nx.complete && nx.day === d && ds.state !== "done";
       const note = ds.state === "done" ? `✓ ${S.fmtDate(ds.date)}` : ds.state === "missed" ? "Missed" : next ? "Up next" : "";
       const sr = ds.state === "done" ? `done ${S.fmtDate(ds.date)}` : ds.state === "missed" ? "missed" : next ? "up next" : "not done yet";
-      return `<button data-act="selDay" data-v="${d}" aria-pressed="${d === day}" class="${ds.state}${next ? " next" : ""}" aria-label="${DAY_NAMES[d]}, ${esc(dayTitle(u, week, d))}, ${sr}"><span class="d" aria-hidden="true">${DAY_NAMES[d]}</span><span class="m" aria-hidden="true">${esc(dayTitle(u, week, d).split(",")[0])}</span>${note ? `<span class="today-dot" aria-hidden="true">${note}</span>` : ""}</button>`; }).join(""); })()}</div>
-    <div class="ring-row"><div class="today-title"><span class="eyebrow">Week ${week} · ${DAY_NAMES[day]}</span><h2 class="h2" id="today-title">${esc(dayTitle(u, week, day))}</h2></div>${funAt("medium") ? ring(done, list.length) : `<span class="small muted">${done} of ${list.length} done</span>`}</div>
+      return `<button data-act="selDay" data-v="${d}" aria-pressed="${d === day}" class="${ds.state}${next ? " next" : ""}" aria-label="${dayName(d)}, ${esc(dayTitle(u, week, d))}, ${sr}"><span class="d" aria-hidden="true">${dayName(d)}</span><span class="m" aria-hidden="true">${esc(dayTitle(u, week, d).split(",")[0])}</span>${note ? `<span class="today-dot" aria-hidden="true">${note}</span>` : ""}</button>`; }).join(""); })()}</div>
+    <button type="button" class="btn block home-pick" data-act="selDay" data-v="Home" aria-pressed="${day === "Home"}">${icon("gym", 20)}<span>${day === "Home" ? "Home workout picked. Tap a day above to go back." : "No gym today? Work out at home"}</span></button>
+    ${day === "Home" ? `<p class="small muted home-note">Uses what you have at home${(P(u).homeGear || []).length ? ` (${esc(listText((P(u).homeGear || []).map(g => PG.HOME_GEAR[g].toLowerCase())))})` : ": just your body weight"}. Change your gear in Settings → Your plan. It counts toward your week, and it never replaces a plan day.</p>` : ""}
+    <div class="ring-row"><div class="today-title"><span class="eyebrow">Week ${week} · ${dayName(day)}</span><h2 class="h2" id="today-title">${esc(dayTitle(u, week, day))}</h2></div>${funAt("medium") ? ring(done, list.length) : `<span class="small muted">${done} of ${list.length} done</span>`}</div>
     ${funHeader(u)}
     ${workoutBar(u, date, s)}
     <details class="more row-disclosure"><summary>${esc(p.name)}'s focus, notes, and date${icon("chevron", 20, { stroke: 2 })}</summary><div class="panel"><p>${esc(p.focusNote)}</p><ul class="small">${(p.notes || []).map(n => `<li>${esc(n)}</li>`).join("")}</ul>
       <label class="field">Logging date<input type="date" data-act="logDate" value="${date}"></label>
-      ${s ? `<div class="field"><span id="move-lbl">This workout is saved as Week ${esc(week)} ${esc(DAY_NAMES[day])}. Move it to:</span><div class="row" role="group" aria-labelledby="move-lbl">${["A", "B"].flatMap(w => DAYS.map(d => [w, d])).filter(([w, d]) => w !== week || d !== day).map(([w, d]) => `<button type="button" class="btn small" data-act="moveWorkout" data-v="${w}${d}">Week ${w} ${DAY_NAMES[d]}</button>`).join("")}</div></div>` : ""}</div></details>
+      ${s ? `<div class="field"><span id="move-lbl">This workout is saved as Week ${esc(week)} ${esc(dayName(day))}. Move it to:</span><div class="row" role="group" aria-labelledby="move-lbl">${["A", "B"].flatMap(w => [...daysFor(LU(), w), "Home"].map(d => [w, d])).filter(([w, d]) => w !== week || d !== day).map(([w, d]) => `<button type="button" class="btn small" data-act="moveWorkout" data-v="${w}${d}">Week ${w} ${dayName(d)}</button>`).join("")}</div></div>` : ""}</div></details>
     <div class="row"><button class="btn small" data-act="planEdit" aria-pressed="${!!state.planEdit}">${state.planEdit ? "Done editing plan" : "Edit this day's plan"}</button>
       ${funAt("medium") && partner !== u ? `<button class="btn small" data-act="hi5">🙌 High-five ${esc(P(partner).name)}</button>` : ""}</div>
     ${state.planEdit ? planEditBox(u, week, day) : ""}
@@ -538,7 +573,7 @@ function exerciseCard(u, date, ex, added, s, idx = 0, count = 0, cardOpts = {}) 
     <div class="row"><button class="btn small" data-act="addSet">+ Add set</button><button class="btn small" data-act="timer">Rest timer</button>${A.get().readAloud && A.canSpeak() ? `<button class="btn small" data-act="readEx" aria-label="Read ${esc(def.name)} aloud">🔊 Read aloud</button>` : ""}
       ${logged ? `<button class="btn small" data-act="cancelEdit">Cancel</button><button class="btn small danger" data-act="deleteEx">${state.confirmDel === ek ? "Confirm delete" : "Delete"}</button>` : added ? `<button class="btn small danger" data-act="dropExtra">Remove</button>` : ""}</div>
     <button class="btn primary block ${d.sets.length && d.sets.every(x => x.done) ? "ready" : ""}" data-act="saveEx">${logged ? "Save changes" : "Save exercise"}</button>
-    ${state.planEdit && !added ? `<div class="plan-tools"><span class="small muted">Plan for Week ${state.sel.week} ${DAY_NAMES[state.sel.day]}</span>
+    ${state.planEdit && !added ? `<div class="plan-tools"><span class="small muted">Plan for Week ${state.sel.week} ${dayName(state.sel.day)}</span>
       <div class="row"><button class="btn small" data-act="planMove" data-v="-1" ${idx === 0 ? "disabled" : ""} aria-label="Move up">↑</button><button class="btn small" data-act="planMove" data-v="1" ${idx >= count - 1 ? "disabled" : ""} aria-label="Move down">↓</button>
       <label class="field" style="flex:1;min-width:120px">Target<input type="text" data-act="planSr" value="${esc(target)}"></label>
       <button class="btn small danger" data-act="planRemove">Remove</button></div></div>` : ""}
@@ -594,7 +629,7 @@ function stepper(f, val, label, step, name = label) {
 
 // Cardio: its own save.
 function cardioCard(u, date, s) {
-  const { week, day } = state.sel; const cp = cardioProgram(u).plan(week, day);
+  const { week, day } = state.sel; const cp = cardioProgram(u).plan(week, baseDay(u, week, day));
   const ek = editKey(u, date, "cardio");
   const commute = s || !otherSlotOn(u, date) ? state.data.activities.find(a => a.id === `${u}-${date}-commute`) : null;
   if ((s?.cardio?.done || s?.cardio?.skipped) && !state.editing.has(ek)) {
@@ -603,7 +638,7 @@ function cardioCard(u, date, s) {
       <div class="last"><b>${c.skipped ? "Skipped: biked to work" : `${esc(c.type)}, ${c.minutes || 0} min${c.miles ? `, ${c.miles} mi` : ""}${c.avgHr ? `, avg HR ${c.avgHr}` : ""}${c.hiit ? ", intervals" : ""}`}</b>${commute ? ` · Bike commute ${commute.miles} mi` : ""}</div></section>`;
   }
   const c = store.get(`twp-c-${u}-${date}-${slotKey()}`, null) || { type: s?.cardio?.type || cp.type, minutes: s?.cardio?.minutes ?? 25, miles: s?.cardio?.miles ?? "", avgHr: s?.cardio?.avgHr ?? "", hiit: s?.cardio?.hiit ?? !!cp.hiit, commute: !!commute, commuteMiles: commute?.miles ?? PROFILES[u].commute.miles };
-  const partner = state.partner ? cardioProgram(other(u)).plan(week, day) : null;
+  const partner = state.partner ? cardioProgram(other(u)).plan(week, baseDay(other(u), week, day)) : null;
   const machines = [cp.type, ...Object.keys(CARDIO_MACHINES).filter(m => m !== cp.type), ...cardioProgram(u).options.filter(o => !(o in CARDIO_MACHINES) && o !== cp.type)];
   const pick = machines.includes(c.type) ? c.type : cp.type;
   return `<section class="card cardio-card" id="cardio-form">
@@ -659,7 +694,7 @@ function drawPicker() {
   const item = (id, name, meta) => `<button class="list-btn" data-act="pickEx" data-id="${id}"><b>${esc(name)}</b><span class="small muted">${esc(meta)}</span></button>`;
   const libList = allLibrary().filter(m => !onList.has(`lib-${m.id}`) && match(m.name)).sort((a, b) => a.name.localeCompare(b.name)).map(m => `<button class="list-btn" data-act="pickLib" data-id="${esc(m.id)}"><b>${esc(m.name)}</b><span class="small muted">${esc([EQUIP[m.equip], (m.focus || []).map(f => FOCUS[f]).join(", ")].filter(Boolean).join(" · "))}</span></button>`).join("");
   const cust = [...customs.values()].filter(e => !onList.has(e.id) && match(e.name)).map(e => item(e.id, e.name, "Your exercise")).join("");
-  const plan = Object.values(ALL_EX).filter(e => !onList.has(e.id) && match(e.n)).map(e => item(e.id, e.n, `Week ${e.week} ${DAY_NAMES[e.day]} · ${e.sr}`)).join("");
+  const plan = Object.values(ALL_EX).filter(e => !onList.has(e.id) && match(e.n)).map(e => item(e.id, e.n, `Week ${e.week} ${dayName(e.day)} · ${e.sr}`)).join("");
   $("#overlay").innerHTML = `<div class="overlay" role="dialog" aria-label="Add an exercise"><div class="inner">
     <div class="between"><h2 class="h2">Add an exercise</h2><button class="btn small" data-act="closeOverlay">Close</button></div>
     <label class="field">Search<input type="text" id="picker-q" data-act="pickerQ" value="${esc(state.pickerQ)}" placeholder="Hip adductor, row, curl…" autocomplete="off"></label>
@@ -865,7 +900,7 @@ function saveLibrary() {
 function planEditBox(u, week, day) {
   const edits = dayEdits(u, week, day);
   const removed = edits.remove.map(id => ALL_EX[id]).filter(Boolean);
-  return `<div class="banner">Editing ${esc(P(u).name)}'s plan for Week ${week} ${DAY_NAMES[day]}. Move, retarget, or remove exercises on each card below.</div>
+  return `<div class="banner">Editing ${esc(P(u).name)}'s plan for Week ${week} ${dayName(day)}. Move, retarget, or remove exercises on each card below.</div>
     <label class="field">Day name<input type="text" data-act="planTitle" value="${esc(dayTitle(u, week, day))}"></label>
     ${removed.length ? `<div class="field"><span>Removed from this day</span>${removed.map(e => `<div class="list-item"><span>${esc(e.n)}</span><button class="btn small" data-act="planRestore" data-id="${e.id}">Put back</button></div>`).join("")}</div>` : ""}
     <div class="row"><button class="btn small" data-act="planFromLib">+ Add from the library</button>
@@ -886,7 +921,7 @@ function drawAddPlan() {
     <p><b>${esc(m.name)}</b> · ${esc(m.sr)}</p>
     <div class="field"><span>Whose plan</span>${segA("who", [...profileIds().map(id => [id, P(id).name]), ...(profileIds().length > 1 ? [["both", profileIds().length > 2 ? "Me + partner" : "Both"]] : [])])}</div>
     <div class="field"><span>Week</span>${segA("week", [["A", "Week A"], ["B", "Week B"], ["AB", "Both weeks"]])}</div>
-    <div class="field"><span>Day</span><div class="chips">${DAYS.map(d => `<button data-act="apSet" data-k="day" data-v="${d}" aria-pressed="${a.day === d}">${DAY_NAMES[d]}<small>${esc(PLAN.A[d].title.split(",")[0])}</small></button>`).join("")}</div></div>
+    <div class="field"><span>Day</span><div class="chips">${daysFor(a.who === "both" ? LU() : a.who, "A").map(d => `<button data-act="apSet" data-k="day" data-v="${d}" aria-pressed="${a.day === d}">${dayName(d)}<small>${esc(planDay(a.who === "both" ? LU() : a.who, "A", d).title.split(",")[0])}</small></button>`).join("")}</div></div>
     <button class="btn primary block" data-act="apSave">Add to plan</button>
   </div></div>`;
 }
@@ -894,7 +929,7 @@ function saveAddPlan() {
   const a = state.addPlan; const id = `lib-${a.libId}`;
   const users = a.who === "both" ? [state.user, other(state.user)] : [a.who]; const weeks = a.week === "AB" ? ["A", "B"] : [a.week];
   editPlan(users, weeks, a.day, d => { if (!d.add.includes(id)) d.add.push(id); });
-  toast(`Added to ${a.who === "both" ? "both plans" : PROFILES[a.who].name + "'s plan"}: ${a.week === "AB" ? "Weeks A and B" : "Week " + a.week} ${DAY_NAMES[a.day]}.`);
+  toast(`Added to ${a.who === "both" ? "both plans" : PROFILES[a.who].name + "'s plan"}: ${a.week === "AB" ? "Weeks A and B" : "Week " + a.week} ${dayName(a.day)}.`);
   state.addPlan = null; closeOverlay(); render();
 }
 
@@ -990,7 +1025,7 @@ function warmupCard(u, date, s, list) {
     if (top > 0) ramp = `<li><b>Ramp-up sets for ${esc(def.name)}:</b> 10 reps at about ${roundTo(top * .5, def.db ? 2.5 : 5)} lb${def.db ? " each" : ""}, then 5 reps at about ${roundTo(top * .75, def.db ? 2.5 : 5)} lb${def.db ? " each" : ""}.</li>`;
   }
   return `<section class="card"><details class="more" ${s?.warmup ? "" : "open"}><summary>Warm-up · 8 minutes</summary><div class="panel">
-    <ul class="warmup small"><li><b>5 minutes easy</b> on the bike or elliptical, until you're slightly warm.</li>${(WARMUPS[state.sel.day] || WARMUPS.Mon).map(m => `<li>${esc(m)}</li>`).join("")}${ramp}</ul>
+    <ul class="warmup small"><li><b>5 minutes easy</b> on the bike or elliptical, until you're slightly warm.</li>${(WARMUPS[baseDay(LU(), state.sel.week, state.sel.day)] || WARMUPS.Mon).map(m => `<li>${esc(m)}</li>`).join("")}${ramp}</ul>
     <button class="btn primary block" data-act="warmupDone">Warm-up done</button></div></details></section>`;
 }
 
@@ -1118,7 +1153,7 @@ function ring(done, total) {
 
 // ---------------------------------------------------------------- plan builder helpers
 const dayEdits = (u, week, day) => ({ add: [], remove: [], order: [], sr: {}, title: "", ...(planEdits(u)[`${week}-${day}`] || {}) });
-const dayTitle = (u, week, day) => dayEdits(u, week, day).title || PLAN[week][day].title;
+const dayTitle = (u, week, day) => dayEdits(u, week, day).title || planDay(u, week, day).title;
 const srFor = (u, ex, def) => dayEdits(u, state.sel.week, state.sel.day).sr[ex.id] || def.sr;
 
 // ---------------------------------------------------------------- profile setup (the interview)
@@ -1168,13 +1203,14 @@ function saveProfileForm() {
 // ---------------------------------------------------------------- onboarding questionnaire
 // One question per screen. New people go through it when they're added; anyone can retake it from Settings.
 // Finishing tailors the plan to them (see tailor.js) and saves the answers on their profile.
-const OB_STEPS = ["name", "goals", "focus", "experience", "schedule", "injuries", "limits", "cardio", "review"];
+const OB_STEPS = ["name", "goals", "focus", "experience", "schedule", "injuries", "limits", "home", "cardio", "review"];
 function openOnboarding(id) {
   state.overlay = "onboard";
   const p = id ? P(id) : { ...PROFILE_DEFAULTS, name: "", color: ["#2f6b5e", "#4b5d8a", "#b5532f", "#8a5a9c", "#2e7d4f", "#9a6b12"][profileIds().length % 6] };
   state.ob = { id, step: 0, a: {
     name: p.name || "", avatar: p.avatar || "", color: p.color, goals: [...(p.goals || [])], goalNote: p.focusNote || "", focus: [...(p.focus || [])],
     experience: p.experience || "", intensity: p.intensity || "steady", days: p.daysPerWeek || 4, sessionLen: p.sessionLen || 60,
+    style: p.planStyle || "auto", homeGear: [...(p.homeGear || [])],
     injuries: id ? [...(p.injuries || [])] : [], injuryNote: p.injuryNote || "", limits: [...(p.limits || [])], limitNote: p.limitNote || "",
     cardio: p.cardio || "steady", commute: !!p.commute?.enabled, miles: p.commute?.miles || ""
   } };
@@ -1195,9 +1231,12 @@ function drawOnboarding() {
   if (step === "focus") body = q("Any body parts you want extra attention on?", "Optional. Leave it blank for a balanced plan.", multi("focus", [...GROUPS.filter(g => g !== "cardio").map(g => [g, FOCUS[g]]), ["full", "Full body"], ["cardio", "Cardio fitness"]]));
   if (step === "experience") body = q("How much have you trained before?", "", single("experience", Object.entries(TL.EXPERIENCE).map(([k, [l, s]]) => [k, l, s]))) +
     `<h3 class="h3 ob-sub">How hard should we push?</h3>` + single("intensity", [["easy", "Ease me in", "Lighter start, build up slowly"], ["steady", "Steady", "Challenging but comfortable"], ["push", "Push me", "Harder versions when they're safe for you"]]);
-  if (step === "schedule") body = q("How many days a week do you want to train?", "This is your weekly goal. The plan has 4 workouts a week. Fewer is fine, and on extra days you can log bonus sessions.",
+  if (step === "schedule") body = q("How many days a week do you want to train?", "Your plan gets this many workouts a week. Do them on whatever days you make it in. On days off, bonus workouts are always there if you want them.",
     `<div class="seg ob-days" role="radiogroup">${[1, 2, 3, 4, 5, 6, 7].map(d => `<button type="button" role="radio" data-act="obPick" data-k="days" data-v="${d}" aria-checked="${+a.days === d}" aria-label="${d} day${d === 1 ? "" : "s"} a week">${d}</button>`).join("")}</div>
-     <h3 class="h3 ob-sub">How long is a typical session?</h3>` + single("sessionLen", Object.entries(TL.SESSION_LEN)));
+     <h3 class="h3 ob-sub">How do you want your week laid out?</h3>` + single("style", Object.entries(PG.STYLES).map(([k, [l, sub]]) => [k, l, sub])) +
+    `<h3 class="h3 ob-sub">How long is a typical session?</h3>` + single("sessionLen", Object.entries(TL.SESSION_LEN)));
+  if (step === "home") body = q("Some days you won't make it to the gym. What do you have at home?", "Your home workout uses only what you pick. Pick all that apply.",
+    multi("homeGear", Object.entries(PG.HOME_GEAR), "Nothing, just me"));
   if (step === "injuries") body = q("Any injuries, aches, or weak spots?", "We'll swap in gentler exercises for these and track them in your daily check-in. Pick all that apply.",
     multi("injuries", Object.entries(PAIN_AREAS), "None") + `<label class="field">Details (optional)<textarea data-ob="injuryNote" placeholder="Torn meniscus in my left knee, 2023…">${esc(a.injuryNote)}</textarea></label>
      <p class="small muted">This isn't medical advice. If something hurts, stop, and check with a doctor or physical therapist.</p>`);
@@ -1208,10 +1247,14 @@ function drawOnboarding() {
      <label class="field">Round-trip miles (optional)<input type="number" inputmode="decimal" step="any" data-ob="miles" value="${esc(a.miles)}"></label>`;
   if (step === "review") {
     const t = TL.tailorPlan(obAnswers()); const list = Object.entries(t);
-    const line = ([exId, x]) => { const ex = ALL_EX[exId]; const nm = x.v === "hard" ? ex.h?.n : x.v === "swap" ? ex.swap?.n : libItem(x.v.slice(4))?.name; return `<li><b>${esc(ex.n)}</b> → ${esc(nm || "")}<br><span class="small muted">${esc(x.why)} · Week ${ex.week} ${DAY_NAMES[ex.day]}</span></li>`; };
+    const line = ([exId, x]) => { const ex = ALL_EX[exId]; const nm = x.v === "hard" ? ex.h?.n : x.v === "swap" ? ex.swap?.n : libItem(x.v.slice(4))?.name; return `<li><b>${esc(ex.n)}</b> → ${esc(nm || "")}<br><span class="small muted">${esc(x.why)} · Week ${ex.week} ${dayName(ex.day)}</span></li>`; };
     const gentle = list.filter(([, x]) => x.v !== "hard"), harder = list.filter(([, x]) => x.v === "hard");
     body = q(`Here's your plan${a.name ? ", " + esc(a.name) : ""}`, "",
-      `<section class="card ob-sum"><p><b>${a.days} day${+a.days === 1 ? "" : "s"} a week</b> · ${esc(TL.SESSION_LEN[a.sessionLen] || "")} · ${esc(TL.EXPERIENCE[a.experience || "some"][0])}</p>
+      `${(() => { const pv = { ...obAnswers(), onboardedAt: 1, daysPerWeek: +a.days, planStyle: a.style, sessionLen: +a.sessionLen, focus: a.focus, homeGear: a.homeGear };
+          const wk = PG.buildWeek(pv, "A") || DAYS.map((d, i) => ({ key: d, title: PLAN.A[d].title, ex: PLAN.A[d].ex }));
+          return `<section class="card ob-sum"><h3 class="h3">Your week</h3><ol class="ob-week">${wk.map((d, i) => `<li><b>Day ${i + 1}</b> · ${esc(d.title)} <span class="small muted">(${d.ex.length} exercises)</span></li>`).join("")}</ol>
+            <p class="small muted">Week A and Week B use different exercises. Plus a ${PG.buildHome(pv, "A").ex.length}-exercise home workout for days you can't make it to the gym.</p></section>`; })()}
+       <section class="card ob-sum"><p><b>${a.days} day${+a.days === 1 ? "" : "s"} a week</b> · ${esc(TL.SESSION_LEN[a.sessionLen] || "")} · ${esc(TL.EXPERIENCE[a.experience || "some"][0])}</p>
         ${a.goals.length ? `<p>Goals: ${esc(listText(a.goals.map(g => TL.GOALS[g].toLowerCase())))}.</p>` : ""}
         ${a.focus.length ? `<p>Extra attention: ${esc(listText(a.focus.map(f => (FOCUS[f] || f).toLowerCase())))}.</p>` : ""}</section>
        ${list.length ? `<p>We changed <b>${list.length}</b> exercise${list.length === 1 ? "" : "s"} to fit you. You can switch any of them back on the workout card.</p>
@@ -1238,6 +1281,7 @@ function finishOnboarding() {
   saveProfile(id, {
     name, avatar: a.avatar, color: a.color || "#2f6b5e", goals: a.goals, focusNote: a.goalNote.trim(), focus: a.focus,
     experience: a.experience || "some", intensity: a.intensity, daysPerWeek: +a.days || 4, sessionLen: +a.sessionLen || 60,
+    planStyle: a.style || "auto", homeGear: a.homeGear,
     injuries: a.injuries, injuryNote: a.injuryNote.trim(), limits: a.limits, limitNote: a.limitNote.trim(),
     pain: a.injuries.length ? a.injuries : (o.id ? P(id).pain : ["knees", "shoulders", "lowerBack"]),
     defaultVariant: harder ? "hard" : "std", cardio: a.cardio, commute: { enabled: !!a.commute, miles: +a.miles || 0 },
@@ -1474,7 +1518,7 @@ function progLifts() {
   const h = S.exHistory(state.data.sessions, u, id, v);
   const def = S.defFor(id, v, h[h.length - 1]);
   const loggedOpts = [...logged.entries()].map(([k, n]) => `<option value="${esc(k)}" ${k === state.progEx ? "selected" : ""}>${esc(n)}${k.endsWith("|hard") ? " (harder)" : k.endsWith("|swap") ? " (swap)" : k.includes("|lib:") ? " (library swap)" : ""}</option>`).join("");
-  const planOpts = Object.values(ALL_EX).filter(e => !logged.has(`${e.id}|std`)).map(e => `<option value="${e.id}|std" ${`${e.id}|std` === state.progEx ? "selected" : ""}>${esc(e.n)} · ${e.week} ${DAY_NAMES[e.day]}</option>`).join("");
+  const planOpts = Object.values(ALL_EX).filter(e => !logged.has(`${e.id}|std`)).map(e => `<option value="${e.id}|std" ${`${e.id}|std` === state.progEx ? "selected" : ""}>${esc(e.n)} · ${e.week} ${dayName(e.day)}</option>`).join("");
   const sug = ALL_EX[id] ? S.suggestion(state.data.sessions, u, id, v) : null;
   let tiles = "", table = "";
   if (h.length) {
@@ -1529,7 +1573,7 @@ function progHistory() {
   if (!ss.length) return `<section class="card"><p class="muted">No workouts logged yet.</p></section>`;
   return `<section class="card">${ss.slice(0, 60).map(s => {
     const n = (s.exercises || []).filter(e => !e.skipped && e.sets?.length).length;
-    return `<div class="list-item"><div><b>${S.fmtDate(s.date)}</b> · Week ${esc(s.week)} ${esc(DAY_NAMES[s.day] || s.day)}<div class="small muted">${n} exercises${s.cardio?.done ? ` · ${esc(s.cardio.type)} ${s.cardio.minutes || 0} min` : ""}</div></div>
+    return `<div class="list-item"><div><b>${S.fmtDate(s.date)}</b> · Week ${esc(s.week)} ${esc(dayName(s.day))}<div class="small muted">${n} exercises${s.cardio?.done ? ` · ${esc(s.cardio.type)} ${s.cardio.minutes || 0} min` : ""}</div></div>
       <div class="row"><button class="btn small" data-act="openDay" data-id="${s.id}">Open</button><button class="btn small danger" data-act="delSession" data-id="${s.id}">${state.confirmDel === s.id ? "Confirm" : "Delete"}</button></div></div>`;
   }).join("")}</section>`;
 }
@@ -1843,7 +1887,7 @@ document.addEventListener("click", e => {
     case "planClear": {
       if (state.confirmDel !== "planClear") { state.confirmDel = "planClear"; render(); break; }
       state.confirmDel = null; const { week, day } = state.sel; const u = LU();
-      editPlan([u], [week], day, d => { d.remove = PLAN[week][day].ex.map(e => e.id); d.add = []; d.order = []; }); toast("Day cleared. Add exercises from the library."); break;
+      editPlan([u], [week], day, d => { d.remove = planDay(u, week, day).ex.map(e => e.id); d.add = []; d.order = []; }); toast("Day cleared. Add exercises from the library."); break;
     }
     case "planReset": {
       if (state.confirmDel !== "planReset") { state.confirmDel = "planReset"; render(); break; }
@@ -1898,16 +1942,16 @@ document.addEventListener("click", e => {
     }
     case "focusGo": { const n = +el.dataset.n; if (n >= 0 && n < (state.focusCount || 99)) { state.focusStep = n; render(); scrollTo(0, 0); const h = $("#main .focus-head + * .name, #main .focus-head + * summary, #main .focus-head + * h3"); h?.setAttribute("tabindex", "-1"); h?.focus({ preventScroll: true }); A.announce(`Step ${n + 1}`); } break; }
     case "focusAll": state.focusAll = true; render(); break;
-    case "markDone": writeSession(LU(), slotDate(state.sel.week, state.sel.day), { markedDone: true }); toast(`Week ${state.sel.week} ${DAY_NAMES[state.sel.day]} marked done.`); render(); break;
+    case "markDone": writeSession(LU(), slotDate(state.sel.week, state.sel.day), { markedDone: true }); toast(`Week ${state.sel.week} ${dayName(state.sel.day)} marked done.`); render(); break;
     case "unmarkDone": { const s = sessionFor(LU(), LD()); if (s) patch("sessions", s.id, { markedDone: false }); render(); break; }
     case "moveWorkout": {
       const s = sessionFor(LU(), LD()); if (!s) break;
       const week = v[0], day = v.slice(1);
       const clash = state.data.sessions.find(x => x !== s && x.user === s.user && x.week === week && x.day === day && S.cycleInfo(x.date, cycleStart()).index === S.cycleInfo(s.date, cycleStart()).index && (x.exercises || []).some(e => e.sets?.length));
-      if (clash) { toast(`Week ${week} ${DAY_NAMES[day]} already has a workout this cycle (${S.fmtDate(clash.date)}). Move that one first.`); break; }
+      if (clash) { toast(`Week ${week} ${dayName(day)} already has a workout this cycle (${S.fmtDate(clash.date)}). Move that one first.`); break; }
       s.week = week; s.day = day; patch("sessions", s.id, { week, day, moved: true });
       state.sel = { week, day }; state.userTouchedSel = true; render();
-      toast(`Moved to Week ${week} ${DAY_NAMES[day]}.`); A.announce(`Workout moved to Week ${week} ${DAY_NAMES[day]}`); break;
+      toast(`Moved to Week ${week} ${dayName(day)}.`); A.announce(`Workout moved to Week ${week} ${dayName(day)}`); break;
     }
     case "setShare": saveProfile(state.user, { share: v }); A.announce(`Sharing set to ${SHARE_LABEL[v]}`); setTimeout(render, 60); break;
     case "goCrew": closeOverlay(); go("crew"); break;
@@ -2299,7 +2343,7 @@ if ("serviceWorker" in navigator) {
 // ---------------------------------------------------------------- updates
 // Every time the app opens (or comes back to the front), ask the server which version is live.
 // If it's newer than this copy, throw the old copy away and reload. No buttons needed.
-const SHELL_FILES = ["./", "index.html", "css/styles.css", "js/app.js", "js/plan.js", "js/stats.js", "js/firebase.js", "js/library.js", "js/fun.js", "js/safety.js", "js/timer.js", "js/a11y.js", "js/icons.js", "js/tailor.js", "manifest.webmanifest", "sw.js"];
+const SHELL_FILES = ["./", "index.html", "css/styles.css", "js/app.js", "js/plan.js", "js/stats.js", "js/firebase.js", "js/library.js", "js/fun.js", "js/safety.js", "js/timer.js", "js/a11y.js", "js/icons.js", "js/tailor.js", "js/program.js", "manifest.webmanifest", "sw.js"];
 async function liveVersion() {
   try { const r = await fetch(`sw.js?check=${Date.now()}`, { cache: "no-store" }); const m = /VERSION = "twp-v(\d+)"/.exec(await r.text()); return m ? m[1] : null; } catch { return null; }
 }

@@ -181,6 +181,48 @@ for (const b of BUILTIN) {
   const noFloor = TL.tailorPlan({ injuries: [], limits: ["noFloor"], experience: "some" });
   yes("no floor work: Dead Bug replaced", !!noFloor["a-thu-bug"]);
 }
+// Plans built from the questionnaire: 1–7 days, full body or split, plus home workouts.
+{
+  const PG = await import(join(dir, "program.js"));
+  const { ALL_EX } = await import(join(dir, "plan.js"));
+  const { BUILTIN } = await import(join(dir, "library.js"));
+  const exists = id => id.startsWith("lib-") ? BUILTIN.some(b => `lib-${b.id}` === id) : !!ALL_EX[id];
+  yes("Mat/Benny (no questionnaire) keep the original plan", PG.buildWeek({}, "A") === null);
+  yes("4 days, split: original plan", PG.buildWeek({ onboardedAt: 1, daysPerWeek: 4, planStyle: "split" }, "A") === null);
+  for (const n of [1, 2, 3, 4, 5, 6, 7]) for (const style of ["auto", "full", "split"]) for (const len of [30, 60, 90]) {
+    const prof = { onboardedAt: 1, daysPerWeek: n, planStyle: style, sessionLen: len, focus: ["glutes", "arms"] };
+    for (const w of ["A", "B"]) {
+      const wk = PG.buildWeek(prof, w);
+      if (n === 4 && style !== "full") { yes(`${n}/${style}: original`, wk === null); continue; }
+      const tag = `${n} days, ${style}, ${len} min, week ${w}`;
+      yes(`${tag}: ${n} days`, wk.length === n && wk.every((d, i) => d.key === `D${i + 1}`));
+      yes(`${tag}: every day has 3+ real exercises, no repeats`, wk.every(d => d.ex.length >= 3 && d.ex.every(exists) && new Set(d.ex).size === d.ex.length));
+      yes(`${tag}: sessions fit the time`, wk.every(d => d.ex.length <= ({ 30: 4, 60: 6, 90: 8 })[len]));
+      if (style === "full" || (style === "auto" && n <= 3) || n === 1) yes(`${tag}: full body days`, wk.every(d => d.title === "Full body"));
+    }
+    if (!(n === 4 && style !== "full")) yes(`${n}/${style}: weeks A and B differ`, JSON.stringify(PG.buildWeek(prof, "A")) !== JSON.stringify(PG.buildWeek(prof, "B")));
+  }
+  for (const gear of [[], ["band"], ["dumbbells"], ["dumbbells", "band", "mat"]]) for (const lim of [[], ["noFloor"], ["noImpact"]]) {
+    const prof = { homeGear: gear, limits: lim, injuries: ["knees"], sessionLen: 45 };
+    for (const w of ["A", "B"]) {
+      const h = PG.buildHome(prof, w); const items = h.ex.map(id => BUILTIN.find(b => `lib-${b.id}` === id));
+      const tag = `home ${gear.join("+") || "none"} ${lim.join("+")} ${w}`;
+      yes(`${tag}: 4+ moves`, items.length >= 4 && items.every(Boolean));
+      yes(`${tag}: only gear they have`, items.every(m => m.equip === "bodyweight" || (m.equip === "band" && gear.includes("band")) || (m.equip === "dumbbell" && gear.includes("dumbbells"))));
+      if (lim.includes("noFloor")) yes(`${tag}: no floor work`, items.every(m => m.position !== "floor"));
+      if (lim.includes("noImpact")) yes(`${tag}: no impact`, items.every(m => !m.impact));
+    }
+  }
+  const S2 = S;
+  const s = (date, week, day) => ({ user: "jo", date, week, day, exercises: [{ id: "x", sets: [{ w: 1, r: 1 }] }] });
+  const D2 = ["D1", "D2"];
+  yes("2-day plan opens Day 1", S2.pickDay([], "jo", "2026-10-13", "2026-09-28", D2).day === "D1");
+  yes("2-day plan, Day 1 done: Day 2 next", S2.pickDay([s("2026-10-12", "A", "D1")], "jo", "2026-10-14", "2026-09-28", D2).day === "D2");
+  const both = [s("2026-10-12", "A", "D1"), s("2026-10-13", "A", "D2")];
+  yes("2-day plan done: week complete", S2.pickDay(both, "jo", "2026-10-15", "2026-09-28", D2).complete === true);
+  yes("a home workout doesn't count as a plan day", S2.pickDay([s("2026-10-12", "A", "Home")], "jo", "2026-10-13", "2026-09-28", D2).day === "D1");
+  yes("a home workout logged today opens Home", S2.pickDay([s("2026-10-13", "A", "Home")], "jo", "2026-10-13", "2026-09-28", D2).day === "Home");
+}
 // ---------------------------------------------------------------- accessibility settings
 {
   const mem = {}; globalThis.localStorage = { getItem: k => mem[k] ?? null, setItem: (k, v) => { mem[k] = String(v); }, removeItem: k => { delete mem[k]; } };

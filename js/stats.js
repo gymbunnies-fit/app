@@ -33,9 +33,8 @@ export function cycleInfo(date, cycleStart) {
 // whatever calendar day you actually show up. Open the first one not done yet this week.
 // A workout logged today stays open. When all four are done, show the last one (the week is complete).
 // Unfinished days from an earlier week are skipped (shown as missed), and each new week starts at Day 1.
-const DN = { Mon: "Day 1", Tue: "Day 2", Wed: "Day 3", Thu: "Day 4" };
-export function pickDay(sessions, user, today, cycleStart) {
-  const DAYS = ["Mon", "Tue", "Wed", "Thu"];
+const DN = { Mon: "Day 1", Tue: "Day 2", Wed: "Day 3", Thu: "Day 4", D1: "Day 1", D2: "Day 2", D3: "Day 3", D4: "Day 4", D5: "Day 5", D6: "Day 6", D7: "Day 7", Home: "Home workout" };
+export function pickDay(sessions, user, today, cycleStart, DAYS = ["Mon", "Tue", "Wed", "Thu"]) {
   const logged = x => (x.exercises || []).some(e => e.sets?.length) || !!x.markedDone || Object.values(x.ex || {}).some(e => e?.sets?.length);
   const cyc = cycleInfo(today, cycleStart);
   const week = cyc.week;
@@ -45,7 +44,7 @@ export function pickDay(sessions, user, today, cycleStart) {
   const done = new Set(mine.map(x => x.day));
   const open = DAYS.find(d => !done.has(d));
   if (open) return { week, day: open };
-  const last = mine.sort((a, b) => b.date.localeCompare(a.date) || DAYS.indexOf(b.day) - DAYS.indexOf(a.day))[0];
+  const last = mine.filter(x => DAYS.includes(x.day)).sort((a, b) => b.date.localeCompare(a.date) || DAYS.indexOf(b.day) - DAYS.indexOf(a.day))[0];
   return { week, day: last?.day || "Thu", complete: true };
 }
 

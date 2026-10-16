@@ -3,7 +3,7 @@
 
 export const GYM = { name: "Planet Fitness Kirkwood", maxDumbbell: 50 };
 
-export const EQUIP = { dumbbell: "Dumbbells", machine: "Machine", cable: "Cable", barbell: "Smith / barbell", bodyweight: "Bodyweight", cardio: "Cardio machine", other: "Other" };
+export const EQUIP = { dumbbell: "Dumbbells", machine: "Machine", cable: "Cable", barbell: "Smith / barbell", bodyweight: "Bodyweight", band: "Resistance band", cardio: "Cardio machine", other: "Other" };
 export const PATTERN = { push: "Push", pull: "Pull", squat: "Squat", hinge: "Hinge", lunge: "Lunge", carry: "Carry", rotation: "Rotation", core: "Core", isolation: "Isolation", power: "Power" };
 export const JOINTS = { neck: "Neck", shoulders: "Shoulders", elbows: "Elbows", wrists: "Wrists", lowerBack: "Lower back", hips: "Hips", knees: "Knees", ankles: "Ankles & feet" };
 export const POSITION = { standing: "Standing", seated: "Seated", lying: "Lying on a bench", floor: "On the floor", bent: "Bent over" };
@@ -407,6 +407,101 @@ export const MACHINES = [
 ];
 
 BUILTIN.push(...MACHINES);
+
+// At-home moves: no equipment (bodyweight) or a resistance band. Used by home workouts and the library.
+const BW = (id, name, focus, pattern, lvl, position, joints, sr, how, risks, o = {}) => L(id, name, focus, pattern, lvl, position, joints, sr, how, risks, { equip: "bodyweight", db: false, kind: "bw", home: true, ...o });
+const BAND = (id, name, focus, pattern, lvl, position, joints, sr, how, risks, o = {}) => L(id, name, focus, pattern, lvl, position, joints, sr, how, risks, { equip: "band", db: false, kind: "bw", home: true, ...o });
+export const HOME_MOVES = [
+  BW("bw-squat", "Bodyweight Squat", ["legs", "glutes"], "squat", [1, 2, 0], "standing", { knees: 1, hips: 1 }, "3 × 12–15",
+    "Feet shoulder-width, sit your hips back and down like there's a chair behind you, then stand up tall. Arms forward for balance.",
+    [["knees", "Knee pain from knees caving in", "Push your knees out over your toes and only go as low as feels good."]]),
+  BW("bw-sit-stand", "Sit-to-Stand from a Chair", ["legs", "glutes"], "squat", [1, 1, 0], "standing", { knees: 1, hips: 1 }, "3 × 10",
+    "Sit on the front of a sturdy chair, lean forward slightly, and stand up without using your hands. Sit back down slowly.",
+    [["knees", "Knee strain from plopping down", "Lower yourself slowly and touch the seat lightly."]]),
+  BW("bw-reverse-lunge", "Reverse Lunge", ["glutes", "legs"], "lunge", [2, 2, 0], "standing", { knees: 1, hips: 1, ankles: 1 }, "3 × 8 per leg",
+    "Step one foot back and lower until both knees bend, then push through the front heel to stand. Hold a wall or chair for balance.",
+    [["knees", "Front-knee pain", "Keep your front shin fairly upright and take a longer step back."]], { uni: true }),
+  BW("bw-wall-sit", "Wall Sit", ["legs"], "squat", [1, 2, 0], "standing", { knees: 2 }, "3 × 30 sec",
+    "Back flat against a wall, slide down until your knees are bent (as low as is comfortable), and hold.",
+    [["knees", "Kneecap pressure", "Stay higher on the wall. A shallow wall sit still works."]], { kind: "time" }),
+  BW("bw-glute-bridge", "Glute Bridge", ["glutes"], "hinge", [1, 1, 0], "floor", { lowerBack: 1 }, "3 × 12–15",
+    "Lie on your back, knees bent, feet flat. Squeeze your glutes and lift your hips until your body is straight from knees to shoulders. Lower slowly.",
+    [["lowerBack", "Low back arching", "Lift with your glutes and stop when your hips are level. Don't push higher."]]),
+  BW("bw-single-bridge", "Single-Leg Glute Bridge", ["glutes"], "hinge", [2, 2, 0], "floor", { lowerBack: 1, hips: 1 }, "3 × 8 per leg",
+    "Same as a glute bridge with one foot lifted. Keep your hips level as you rise.",
+    [["lowerBack", "Low back strain", "Keep your hips level and stop at a straight line."]], { uni: true }),
+  BW("bw-wall-pushup", "Wall Push-Up", ["chest"], "push", [1, 1, 0], "standing", { shoulders: 1, wrists: 1 }, "3 × 12–15",
+    "Hands on a wall at chest height, step back, and lower your chest toward the wall, then push away. Body stays straight.",
+    [["shoulders", "Shoulder strain", "Hands slightly below shoulder height, elbows angled back, not flared out."]]),
+  BW("bw-incline-pushup", "Incline Push-Up", ["chest"], "push", [1, 2, 0], "standing", { shoulders: 1, wrists: 1, elbows: 1 }, "3 × 8–12",
+    "Hands on a kitchen counter or sturdy table, body straight. Lower your chest to the edge and push back up. Lower surface = harder.",
+    [["wrists", "Wrist pain", "Grip the edge of the counter so your wrists stay straight."]]),
+  BW("bw-pushup", "Push-Up", ["chest"], "push", [2, 2, 0], "floor", { shoulders: 1, wrists: 2, elbows: 1 }, "3 × 6–12",
+    "Hands under your shoulders, body straight from head to heels. Lower your chest to the floor and push back up. Drop to your knees if needed.",
+    [["wrists", "Wrist strain", "Use fists or push-up handles to keep your wrists straight."],
+     ["shoulders", "Shoulder pain", "Elbows at about 45° from your body, not straight out."]]),
+  BW("bw-yt-raise", "Prone Y-T Raise", ["back", "shoulders"], "isolation", [1, 1, 0], "floor", { shoulders: 1, lowerBack: 1 }, "3 × 8 each",
+    "Lie face down, forehead on a towel. Lift your arms into a Y, lower, then out to a T, squeezing your shoulder blades together each time.",
+    [["lowerBack", "Low back pinch", "Keep your legs down and lift only your arms and upper chest a little."]]),
+  BW("bw-superman", "Superman Hold", ["back"], "hinge", [1, 1, 0], "floor", { lowerBack: 1 }, "3 × 20 sec",
+    "Lie face down, arms overhead. Lift your arms, chest, and legs a few inches off the floor and hold.",
+    [["lowerBack", "Low back strain from lifting too high", "A few inches is plenty. Long and low, not arched."]], { kind: "time" }),
+  BW("bw-plank", "Forearm Plank", ["core"], "core", [1, 2, 0], "floor", { shoulders: 1, lowerBack: 1 }, "3 × 30 sec",
+    "Forearms on the floor, elbows under shoulders, body straight from head to heels. Squeeze your glutes and hold.",
+    [["lowerBack", "Low back sagging", "Squeeze your glutes and tuck your ribs. Drop to your knees when your form slips."]], { kind: "time" }),
+  BW("bw-side-plank", "Side Plank", ["core"], "core", [2, 2, 0], "floor", { shoulders: 1 }, "3 × 20 sec per side",
+    "On your side, forearm under your shoulder, hips lifted so your body is straight. Bottom knee down to make it easier.",
+    [["shoulders", "Shoulder strain", "Elbow right under your shoulder; push the floor away."]], { kind: "time" }),
+  BW("bw-dead-bug", "Dead Bug", ["core"], "core", [1, 1, 0], "floor", { lowerBack: 1 }, "3 × 8 per side",
+    "On your back, arms up, knees over hips. Slowly lower the opposite arm and leg toward the floor, keeping your low back pressed down.",
+    [["lowerBack", "Low back arching", "Only lower as far as you can keep your back flat."]]),
+  BW("bw-bird-dog", "Bird Dog", ["core", "back"], "core", [1, 1, 0], "floor", { wrists: 1, lowerBack: 1 }, "3 × 8 per side",
+    "On hands and knees, reach one arm forward and the opposite leg back until both are level. Pause, return, switch.",
+    [["lowerBack", "Twisting the hips", "Keep your hips square, like a cup of water is on your back."]]),
+  BW("bw-knee-march", "Standing Knee March", ["core"], "core", [1, 1, 0], "standing", { hips: 1 }, "3 × 30 sec",
+    "Stand tall and lift one knee to hip height, then the other, in a slow march. Brace your stomach. Hold a counter if you need it.",
+    [["hips", "Hip flexor tightness", "Smaller lifts are fine. Stay tall."]], { kind: "time" }),
+  BW("bw-calf-raise", "Standing Calf Raise", ["calves"], "isolation", [1, 1, 0], "standing", { ankles: 2 }, "3 × 15",
+    "Stand near a wall for balance, rise onto the balls of your feet, pause, and lower slowly. Do it on a step for more range.",
+    [["ankles", "Achilles strain", "Slow and controlled; skip the step if a foot or ankle is healing."]]),
+  BW("bw-step-jack", "Step Jacks", ["full"], "power", [1, 2, 0], "standing", { knees: 1, ankles: 1 }, "3 × 40 sec",
+    "Like a jumping jack without the jump: step one foot out as your arms go up, step back in, switch sides. Keep a quick pace.",
+    [["knees", "Knee twist", "Point your toes slightly out and step, don't pivot."]], { kind: "time" }),
+  BW("bw-jumping-jack", "Jumping Jacks", ["full"], "power", [1, 2, 2], "standing", { knees: 1, ankles: 2 }, "3 × 30 sec",
+    "Jump your feet out as your arms go overhead, then back in. Land softly on the balls of your feet.",
+    [["ankles", "Ankle and foot impact", "Land softly, or do step jacks instead."]], { kind: "time" }),
+  BAND("band-row", "Band Row", ["back"], "pull", [1, 2, 0], "seated", { shoulders: 1, elbows: 1 }, "3 × 12–15",
+    "Sit with legs out, band around your feet (or anchored in a door at chest height). Pull the handles to your ribs and squeeze your shoulder blades.",
+    [["shoulders", "Shrugging", "Shoulders down, pull with your elbows."]]),
+  BAND("band-pull-apart", "Band Pull-Apart", ["shoulders", "back"], "isolation", [1, 1, 0], "standing", { shoulders: 1 }, "3 × 15",
+    "Hold the band at shoulder height with arms straight. Pull it apart until it touches your chest, then return slowly.",
+    [["shoulders", "Front-shoulder strain", "Soft elbows and a light band. Squeeze your shoulder blades."]]),
+  BAND("band-chest-press", "Band Chest Press", ["chest"], "push", [1, 2, 0], "standing", { shoulders: 1, elbows: 1, wrists: 1 }, "3 × 12–15",
+    "Band around your upper back (or anchored behind you), handles at chest height. Press straight forward, then return slowly.",
+    [["shoulders", "Shoulder strain", "Elbows slightly below shoulder height."]]),
+  BAND("band-shoulder-press", "Band Shoulder Press", ["shoulders"], "push", [1, 2, 0], "standing", { shoulders: 2, elbows: 1 }, "3 × 10–12",
+    "Stand on the band, handles at your shoulders. Press overhead and lower slowly.",
+    [["shoulders", "Shoulder impingement", "Press slightly in front of your head and stop if you feel a pinch."]]),
+  BAND("band-squat", "Band Squat", ["legs", "glutes"], "squat", [1, 2, 0], "standing", { knees: 1, hips: 1 }, "3 × 12",
+    "Stand on the band with handles at your shoulders. Sit your hips back into a squat and stand up against the band.",
+    [["knees", "Knees caving in", "Push your knees out over your toes."]]),
+  BAND("band-rdl", "Band Romanian Deadlift", ["glutes", "legs"], "hinge", [1, 2, 0], "standing", { lowerBack: 1, hips: 1 }, "3 × 12",
+    "Stand on the band, hands at your thighs. Push your hips back with a flat back until you feel your hamstrings, then stand tall.",
+    [["lowerBack", "Rounding your back", "Keep a flat back and only hinge as far as it stays flat."]]),
+  BAND("band-lateral-walk", "Band Lateral Walk", ["glutes"], "isolation", [1, 2, 0], "standing", { hips: 1, knees: 1 }, "3 × 10 steps each way",
+    "Mini band above your knees, slight squat. Step sideways keeping tension on the band, then step back.",
+    [["knees", "Knees caving in", "Push your knees out against the band the whole time."]]),
+  BAND("band-curl", "Band Curl", ["arms"], "isolation", [1, 1, 0], "standing", { elbows: 1 }, "3 × 12–15",
+    "Stand on the band, elbows at your sides, and curl the handles up. Lower slowly.",
+    [["elbows", "Inner-elbow strain", "Slow on the way down; no swinging."]]),
+  BAND("band-pushdown", "Band Triceps Pushdown", ["arms"], "isolation", [1, 1, 0], "standing", { elbows: 1 }, "3 × 12–15",
+    "Anchor the band high in a door. Elbows pinned at your sides, push down until your arms are straight.",
+    [["elbows", "Elbow irritation", "Smooth reps and don't snap to lockout."]]),
+  BAND("band-pallof", "Band Pallof Press", ["core"], "rotation", [1, 1, 0], "standing", { lowerBack: 1 }, "3 × 10 per side",
+    "Band anchored at chest height to your side. Hold it at your chest and press straight out, resisting the twist. Pull back in.",
+    [["lowerBack", "Twisting", "Brace your stomach and keep your hips square."]])
+];
+BUILTIN.push(...HOME_MOVES);
 
 // Fill in defaults so entries typed into the app (machines added later) work like built-in ones.
 export function normalizeLib(e) {

@@ -97,7 +97,7 @@ function libraryFor(ex, lib, pattern) {
   const ok = pattern ? FAMILY[pattern] || [pattern] : null;
   const grp = k => (k === "bw" ? "load" : k || "load"); // bodyweight and loaded reps are interchangeable; timed holds and carries aren't
   const mus = pattern === "isolation" ? muscleOf(ex.n) : null;
-  return lib.filter(b => b.focus?.[0] === main && b.equip !== "cardio" && grp(b.kind) === grp(ex.kind) && b.name !== ex.n && (!ok || ok.includes(b.pattern)) && (!mus || muscleOf(b.name) === mus));
+  return lib.filter(b => b.focus?.[0] === main && b.equip !== "cardio" && b.equip !== "band" && grp(b.kind) === grp(ex.kind) && b.name !== ex.n && (!ok || ok.includes(b.pattern)) && (!mus || muscleOf(b.name) === mus));
 }
 
 export function tailorPlan(prof, { lib = BUILTIN, exercises = Object.values(ALL_EX) } = {}) {
@@ -147,4 +147,10 @@ export function tailorSummary(tailor) {
   const list = Object.entries(tailor);
   const gentler = list.filter(([, t]) => t.v !== "hard").length, harder = list.filter(([, t]) => t.v === "hard").length;
   return { gentler, harder, total: list.length };
+}
+
+// How badly one library exercise fits a person (0 = no problems). Used to pick home-workout moves.
+export function fitCost(item, prof) {
+  const p = { ...prof, injuries: [...new Set((prof.injuries || []).map(a => (a === "foot" ? "ankles" : a)))] };
+  return cost(item, p).n;
 }
