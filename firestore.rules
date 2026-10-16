@@ -44,12 +44,5 @@ service cloud.firestore {
         allow read, write: if coll != 'members' && member(crewId);
       }
     }
-
-    // TEMPORARY: lets the crew owner copy data saved by the first version into the crew.
-    // DELETE THIS BLOCK as soon as you've used "Bring over data from the first version":
-    // while it's here, anyone with an account can read the old data.
-    match /{coll}/{docId} {
-      allow read: if signedIn() && coll in ['sessions', 'body', 'activities', 'settings', 'library', 'profiles', 'pings'];
-    }
   }
 }
