@@ -23,7 +23,14 @@ service cloud.firestore {
     match /daily/{date} {
       allow read: if true;
       allow create, update: if signedIn() && date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
-        && request.resource.data.keys().hasOnly(['workouts', 'home', 'bonus', 'exercises', 'sets', 'stretches', 'onboarded', 'feedback', 'shares']);
+        && request.resource.data.keys().hasOnly(['workouts', 'home', 'bonus', 'exercises', 'sets', 'stretches', 'onboarded', 'feedback', 'shares', 'ev'])
+        && (!('ev' in request.resource.data) || (request.resource.data.ev is map && request.resource.data.ev.size() <= 400));
+    }
+    match /people/{id} {
+      allow read: if true;
+      allow create, update: if signedIn() && id.size() == 16
+        && request.resource.data.keys().hasOnly(['acct', 'last', 'seen', 'v', 'crew', 'days', 'style', 'len', 'goals', 'exp', 'home', 'tailored'])
+        && request.resource.data.seen.size() <= 800;
     }
     match /usage/{id} {
       allow read: if true;

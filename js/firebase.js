@@ -108,8 +108,14 @@ export async function newInviteCode(id, old) {
 // Two top-level collections, readable by anyone, holding no names or emails:
 // daily/{YYYY-MM-DD}: counters (workouts, sets, stretches, ...) summed across everyone.
 // usage/{hashed account id}: which days an account opened the app, plus a coarse plan summary.
+// Counters can be nested one level ({ ev: { t_saveEx: 2 } }); every number becomes a server-side increment.
+const incs = o => Object.fromEntries(Object.entries(o).filter(([, n]) => n).map(([k, n]) => [k, typeof n === "object" ? incs(n) : increment(n)]));
 export function bump(date, fields) {
-  setDoc(doc(db, "daily", date), Object.fromEntries(Object.entries(fields).filter(([, n]) => n).map(([k, n]) => [k, increment(n)])), { merge: true }).catch(() => {});
+  setDoc(doc(db, "daily", date), incs(fields), { merge: true }).catch(() => {});
+}
+// people/{hashed account + profile}: one per person using the app (a phone can hold several people).
+export function markPerson(id, date, data) {
+  return setDoc(doc(db, "people", id), { ...data, last: date, seen: arrayUnion(date) }, { merge: true });
 }
 export function markSeen(id, date, data) {
   return setDoc(doc(db, "usage", id), { ...data, last: date, seen: arrayUnion(date) }, { merge: true });

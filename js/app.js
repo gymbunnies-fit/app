@@ -12,11 +12,11 @@ import * as S from "./stats.js";
 import { BUILTIN, GYM, EQUIP, PATTERN, JOINTS, POSITION, LEVEL, PLAN_PATTERN, PLAN_MACHINES, STRETCH_BY_FOCUS, normalizeLib } from "./library.js";
 import { connect, save, remove, patch, dropField, signOutAndClear, importAll, COLLECTIONS, watchAuth, signInGoogle, signInEmail, createEmailAccount, resetPassword, addGoogle, addPassword, currentInfo,
   getUserDoc, setUserDoc, createCrew, joinCrew, watchCrew, updateMember, removeMember, renameCrew, newInviteCode, readLegacy,
-  bump, markSeen, sendFeedback, watchFeedback, answerFeedback } from "./firebase.js";
+  bump, markSeen, markPerson, sendFeedback, watchFeedback, answerFeedback } from "./firebase.js";
 
 // ---------------------------------------------------------------- helpers
 // Shown at the bottom of Settings so you can tell whether a phone has the latest update. Bump with sw.js VERSION.
-const APP_VERSION = "47";
+const APP_VERSION = "48";
 // The app's name lives here only (plus app-v41.webmanifest and the <title> tags in index.html, which can't read JS).
 const APP_NAME = "GymBunnies.fit";
 const $ = (s, r = document) => r.querySelector(s);
@@ -138,6 +138,151 @@ function bonusPicker(u) {
     <div class="field"><span id="bp-w">Where are you working out?</span><div class="seg" role="radiogroup" aria-labelledby="bp-w">${[["gym", "At the gym"], ["home", "At home"]].map(([k, l]) => `<button type="button" role="radio" data-act="bonusSet" data-k="where" data-v="${k}" aria-checked="${d.where === k}" aria-pressed="${d.where === k}">${l}</button>`).join("")}</div></div>
     <button class="btn primary block" data-act="bonusGo">Build my bonus workout</button></section>`;
 }
+// ---------------------------------------------------------------- week review
+// Once a week is finished (or over), the Workout screen shows a look back instead of the last day.
+const sessDone = x => (x.exercises || []).some(e => e.sets?.length) || x.markedDone;
+const minsText = m => (m >= 60 ? `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m` : `${m} min`);
+const sessMinutes = x => (x.startedAt && x.finishedAt && x.finishedAt > x.startedAt && x.finishedAt - x.startedAt < 5 * 3600e3 ? Math.round((x.finishedAt - x.startedAt) / 60000) : 0);
+function weekRange(week) { const from = slotDate(week, "Mon"); return { from, to: S.addDays(from, 6) }; }
+function weekSessionsOf(u, from, to) { return state.data.sessions.filter(x => x.user === u && x.date >= from && x.date <= to && sessDone(x)); }
+// Should this week show its review? Past weeks always; this week once every day is done and nothing from today is still in progress.
+function reviewState(u, week) {
+  const { from, to } = weekRange(week);
+  if (from > TODAY()) return null;
+  const days = daysFor(u, week), st = days.map(d => dayStatus(u, week, d));
+  const allDone = st.every(x => x.state === "done");
+  const over = to < TODAY();
+  const live = state.data.sessions.some(x => x.user === u && x.date === TODAY() && x.week === week && x.day !== "Bonus" && x.startedAt && !x.finishedAt && x.date >= from && x.date <= to);
+  if (!(over || (allDone && !live))) return null;
+  return { from, to, days, st, allDone, over, current: !over };
+}
+// What changed for one exercise compared with the last time before this week.
+function growthOf(u, e, before) {
+  const hist = S.exHistory(state.data.sessions, u, e.id, e.variant || "std").filter(h => h.date < before);
+  const prev = hist.at(-1); if (!prev) return { first: true };
+  const best = S.personalBest(state.data.sessions, u, e.id, e.variant || "std", S.addDays(before, -1));
+  const score = S.bestScore(e.kind, e.sets), pr = best && S.betterThan(e.kind, score, best.score);
+  const top = sets => (sets || []).reduce((a, b) => ((b.w || 0) > (a.w || 0) || ((b.w || 0) === (a.w || 0) && (b.r || 0) > (a.r || 0)) ? b : a), { w: 0, r: 0 });
+  const u2 = S.unitLabel(e.kind, e.db);
+  const a = top(prev.sets), b = top(e.sets);
+  let text = null, size = 0;
+  if (e.kind === "assist") { const lo = x => Math.min(...(x || []).map(s => s.w || 0)); const x0 = lo(prev.sets), x1 = lo(e.sets); if (x1 < x0) { text = `${x0} → ${x1} lb assist`; size = (x0 - x1) / Math.max(1, x0); } }
+  else if (u2.w) {
+    if (b.w > a.w) { text = `${a.w} → ${b.w} ${u2.w}`; size = (b.w - a.w) / Math.max(1, a.w); }
+    else if (b.w === a.w && b.r > a.r) { text = `${b.w} ${u2.w}: ${a.r} → ${b.r} ${u2.r}`; size = (b.r - a.r) / Math.max(1, a.r) / 2; }
+  } else if (b.r > a.r) { text = `${a.r} → ${b.r} ${u2.r}`; size = (b.r - a.r) / Math.max(1, a.r); }
+  return { text, size, pr };
+}
+// A bonus focus to suggest: what got the least work this week, nudged toward what they asked for.
+function bonusSuggest(u, sessions) {
+  const sets = {};
+  for (const x of sessions) for (const e of x.exercises || []) for (const f of (ALL_EX[e.id]?.focus || e.focus || libItem(e.id)?.focus || [])) sets[f] = (sets[f] || 0) + (e.sets || []).length;
+  const want = new Set(P(u).focus || []);
+  const keys = Object.keys(PG.BONUS_FOCUS).filter(k => k !== "full" && k !== "upper" && k !== "lower");
+  const score = k => { const areas = PG.BONUS_FOCUS[k][1]; return areas.reduce((n, a) => n + (sets[a] || 0), 0) / areas.length - (areas.some(a => want.has(a)) ? 6 : 0); };
+  const key = keys.sort((a, b) => score(a) - score(b))[0] || "full";
+  const areas = PG.BONUS_FOCUS[key][1], name = PG.BONUS_FOCUS[key][0].toLowerCase();
+  const total = areas.reduce((n, a) => n + (sets[a] || 0), 0);
+  const why = areas.some(a => want.has(a)) && total > 0 ? `You asked for extra attention on ${name}.` : total === 0 ? `You didn't train ${name} this week.` : `Your week was light on ${name}.`;
+  return { key, why };
+}
+function weekReview(u, week, rv) {
+  const { from, to, days, st } = rv;
+  const all = weekSessionsOf(u, from, to);
+  const plan = all.filter(x => x.day !== "Bonus" && x.day !== "Home");
+  const extra = all.filter(x => x.day === "Bonus" || x.day === "Home");
+  const ex = all.flatMap(x => (x.exercises || []).filter(e => !e.skipped && e.sets?.length));
+  const doneN = st.filter(x => x.state === "done").length, n = days.length;
+  const sets = ex.reduce((t, e) => t + e.sets.length, 0);
+  const lbs = Math.round(ex.reduce((t, e) => t + F.volumeOf(e), 0));
+  const mins = all.reduce((t, x) => t + sessMinutes(x), 0);
+  const cardio = all.reduce((t, x) => t + (x.cardio?.done ? +x.cardio.minutes || 0 : 0), 0);
+  // Growth: each exercise's best this week against the last time before the week.
+  const seen = new Map();
+  for (const e of ex) { const k = `${e.id}|${e.variant || "std"}`; const cur = seen.get(k); if (!cur || S.betterThan(e.kind, S.bestScore(e.kind, e.sets), S.bestScore(cur.kind, cur.sets))) seen.set(k, e); }
+  const grown = [...seen.values()].map(e => ({ e, g: growthOf(u, e, from) }));
+  const ups = grown.filter(x => x.g.text).sort((a, b) => b.g.size - a.g.size);
+  const prs = grown.filter(x => x.g.pr).length, firsts = grown.filter(x => x.g.first).length;
+  // Against the same week last cycle.
+  const prevAll = weekSessionsOf(u, S.addDays(from, -14), S.addDays(to, -14));
+  const prevLbs = Math.round(prevAll.flatMap(x => x.exercises || []).reduce((t, e) => t + F.volumeOf(e), 0));
+  const prevSets = prevAll.flatMap(x => x.exercises || []).reduce((t, e) => t + (e.sets || []).length, 0);
+  let headline;
+  if (!all.length) headline = "Nothing was logged this week.";
+  else if (!prevAll.length) headline = `Your first Week ${week} on the books. These numbers are your starting line.`;
+  else if (prevLbs > 0 && lbs !== prevLbs) { const pct = Math.round((lbs - prevLbs) / prevLbs * 100); headline = lbs > prevLbs ? `You moved ${(lbs - prevLbs).toLocaleString()} lb more than your last Week ${week} (${pct > 0 ? "+" : ""}${pct}%).` : `You moved ${(prevLbs - lbs).toLocaleString()} lb less than your last Week ${week}. Lighter weeks happen; consistency is what counts.`; }
+  else headline = sets > prevSets ? `${sets - prevSets} more sets than your last Week ${week}.` : `Steady with your last Week ${week}.`;
+  // Worth noting: effort ratings, skipped exercises, missed days.
+  const notes = [];
+  for (const e of ex) {
+    const hard = e.sets.filter(x => x.d === 3).length, easy = e.sets.filter(x => x.d === 1).length;
+    if (hard >= 2) notes.push(`${e.name}: ${hard} sets felt Hard. Stay at this weight next time.`);
+    else if (easy === e.sets.length && e.sets.length >= 2 && ["load", "carry"].includes(e.kind)) notes.push(`${e.name} felt Easy on every set. Try a little more next time.`);
+  }
+  for (const x of plan) {
+    const ed = dayEdits(u, x.week, x.day);
+    let base = planDay(u, x.week, x.day).ex.map(q => q.id);
+    if (x.atHome) base = PG.homeVersion(P(u), base);
+    const planned = [...base.filter(id => !ed.remove.includes(id)), ...ed.add];
+    const logged = new Set((x.exercises || []).map(e => e.id));
+    const miss = planned.filter(id => !logged.has(id)).map(id => resolveEx(id, {})?.n).filter(Boolean);
+    if (miss.length && !x.markedDone) notes.push(`${dayName(x.day)}: skipped ${listText(miss.slice(0, 3))}${miss.length > 3 ? ` and ${miss.length - 3} more` : ""}.`);
+  }
+  st.forEach((x, i) => { if (x.state === "missed") notes.push(`${dayName(days[i])} (${dayTitle(u, week, days[i]).split(",")[0]}) was missed.`); });
+  // Bonus tile: only for the week you're in.
+  let bonus = "";
+  if (rv.current && n < 7) {
+    const sug = bonusSuggest(u, all);
+    if (!state.bonusDraft || state.bonusDraft.week !== from) state.bonusDraft = { focus: sug.key, where: "gym", week: from };
+    const d = state.bonusDraft;
+    const used = extra.filter(x => x.day === "Bonus").length + bonusDates(u).filter(x => x >= from && x <= to).length;
+    const left = Math.max(0, 7 - n - used);
+    const todayBonus = all.find(x => x.day === "Bonus" && x.date === TODAY());
+    const len = TL.SESSION_LEN[P(u).sessionLen] || "About an hour";
+    bonus = `<section class="card bonus-tile" id="bonus-picker" aria-labelledby="bt-h"><h3 class="h3" id="bt-h" tabindex="-1">Bonus day</h3>
+      ${todayBonus ? `<p>You did a bonus workout today. Nice work.</p><button class="btn block" data-act="reviewDay" data-v="Bonus">Open today's bonus workout</button>` : `
+      <p><b>Suggested: ${esc(PG.BONUS_FOCUS[sug.key][0])}.</b> ${esc(sug.why)} Pick something else if you'd rather.</p>
+      <div class="focus-chips ob-chips" role="radiogroup" aria-labelledby="bt-h">${Object.entries(PG.BONUS_FOCUS).map(([k, [l]]) => `<button type="button" role="radio" data-act="bonusSet" data-k="focus" data-v="${k}" aria-checked="${d.focus === k}" aria-pressed="${d.focus === k}">${esc(l)}${k === sug.key ? " ★" : ""}</button>`).join("")}</div>
+      <div class="field"><span id="bt-w">Where?</span><div class="seg" role="radiogroup" aria-labelledby="bt-w">${[["gym", "At the gym"], ["home", "At home"]].map(([k, l]) => `<button type="button" role="radio" data-act="bonusSet" data-k="where" data-v="${k}" aria-checked="${d.where === k}" aria-pressed="${d.where === k}">${l}</button>`).join("")}</div></div>
+      <p class="small muted">${esc(len)} · ${left ? `${left} bonus day${left === 1 ? "" : "s"} left this week` : "You've used every day this week. Superhero."}</p>
+      <button class="btn primary block" data-act="bonusGo">Start bonus day</button>`}
+      <div class="row bonus-alt"><button class="btn small" data-act="reviewStretch">Or recover: 15-minute stretch</button>${bonusDates(u).includes(TODAY()) ? `<span class="small">Bonus cardio logged today.</span>` : `<button class="btn small" data-act="bonusLog">Just log some cardio</button>`}</div></section>`;
+  }
+  const nextWeek = week === "A" ? "B" : "A";
+  const dayCard = (d, i) => {
+    const x = st[i], sess = plan.find(q => q.day === d);
+    const title = dayTitle(u, week, d).split(",")[0];
+    if (x.state !== "done" || !sess) return `<li class="rv-day ${x.state}"><span class="rv-d">${dayName(d)} · ${esc(title)}</span><span class="small muted">${x.state === "missed" ? "Missed" : x.state === "skipped" ? "Not needed: you hit your goal" : "Not done"}</span></li>`;
+    const exs = (sess.exercises || []).filter(e => e.sets?.length);
+    const prN = exs.filter(e => growthOf(u, e, from).pr).length, m = sessMinutes(sess);
+    return `<li><button type="button" class="rv-day done" data-act="reviewDay" data-v="${d}"><span class="rv-d">${dayName(d)} · ${esc(title)}${sess.atHome ? " · at home" : ""}</span><span class="small muted">${S.fmtDate(sess.date)}${m ? ` · ${minsText(m)}` : ""} · ${exs.length} exercise${exs.length === 1 ? "" : "s"} · ${exs.reduce((t, e) => t + e.sets.length, 0)} sets${prN ? ` · ${prN} new best${prN === 1 ? "" : "s"}` : ""}</span>${icon("chevron", 18, { stroke: 2 })}</button></li>`;
+  };
+  return `<section class="week-review" aria-labelledby="rv-h">
+    <div class="rv-head">
+      <h2 class="h2" id="rv-h" tabindex="-1">${rv.allDone ? `Week ${week}, done.` : `Week ${week} recap`}</h2>
+      <p>${rv.allDone ? `All ${n === 1 ? "of this week's workout" : `${n} days`} done.` : `${doneN} of ${n} days done.`}${rv.current ? ` Week ${nextWeek} starts Monday with Day 1.` : ""}</p></div>
+    <section class="card rv-growth" aria-labelledby="rv-g"><h3 class="h3" id="rv-g">How you grew</h3>
+      <p class="rv-headline">${esc(headline)}</p>
+      ${ups.length ? `<ul class="rv-ups">${ups.slice(0, 6).map(({ e, g }) => `<li><b>${esc(e.name)}</b><span>${esc(g.text)}</span>${g.pr ? `<span class="tag new">New best</span>` : ""}</li>`).join("")}</ul>${ups.length > 6 ? `<p class="small muted">And ${ups.length - 6} more went up.</p>` : ""}`
+        : all.length ? `<p class="small muted">No jumps this week, and that's normal. Strength comes in steps, and showing up is the part that builds it.</p>` : ""}
+      ${firsts ? `<p class="small muted">${firsts} exercise${firsts === 1 ? " was" : "s were"} new to you this week. Next time you'll see how they grow.</p>` : ""}
+    </section>
+    <div class="stats rv-stats">
+      <div class="stat"><div class="v">${doneN}/${n}${extra.length ? ` +${extra.length}` : ""}</div><div class="l">Workouts${extra.length ? " (+ bonus)" : ""}</div></div>
+      ${mins ? `<div class="stat"><div class="v">${minsText(mins)}</div><div class="l">Time training</div></div>` : ""}
+      <div class="stat"><div class="v">${sets}</div><div class="l">Sets</div></div>
+      <div class="stat"><div class="v">${lbs.toLocaleString()}</div><div class="l">Pounds moved</div></div>
+      <div class="stat"><div class="v">${prs}</div><div class="l">New personal bests</div></div>
+      ${cardio ? `<div class="stat"><div class="v">${cardio}</div><div class="l">Cardio minutes</div></div>` : ""}
+    </div>
+    <section class="card" aria-labelledby="rv-days"><h3 class="h3" id="rv-days">Day by day</h3>
+      <ul class="rv-days">${days.map(dayCard).join("")}${extra.map(x => `<li><button type="button" class="rv-day done" data-act="reviewDay" data-v="Bonus" data-date="${esc(x.date)}"><span class="rv-d">Bonus · ${esc(PG.BONUS_FOCUS[x.bonusFocus]?.[0] || dayName(x.day))}</span><span class="small muted">${S.fmtDate(x.date)} · ${(x.exercises || []).filter(e => e.sets?.length).length} exercises</span>${icon("chevron", 18, { stroke: 2 })}</button></li>`).join("")}</ul>
+      <p class="small muted">Tap a day to see or change what you logged.</p></section>
+    ${notes.length ? `<section class="card" aria-labelledby="rv-n"><h3 class="h3" id="rv-n">Worth noting</h3><ul class="rv-notes">${notes.slice(0, 5).map(t => `<li>${esc(t)}</li>`).join("")}</ul></section>` : ""}
+    ${bonus}
+  </section>`;
+}
+
 // The original plan day a built day is closest to (for warm-ups and the interval-cardio schedule).
 function baseDay(u, week, day) {
   if (DAYS.includes(day)) return day;
@@ -401,22 +546,44 @@ async function anonId(text) {
 }
 function track(fields) { if (state.auth?.user && state.auth.crewId) bump(TODAY(), fields); }
 let seenBusy = false, seenTried = 0;
+// Once a day per account and per person: which days they opened the app, plus a coarse plan summary.
 async function trackSeen() {
   const uid = state.auth?.user?.uid; if (!uid || !state.auth.crewId || !state.user || !state.flags.profiles || seenBusy) return;
-  const key = `gb-seen2-${uid}`, today = TODAY(); if (store.get(key, "") === today) return;
+  const today = TODAY(), akey = `gb-seen2-${uid}`, pkey = `gb-pseen-${uid}-${state.user}`;
+  const needA = store.get(akey, "") !== today, needP = store.get(pkey, "") !== today;
+  if (!needA && !needP) return;
   if (Date.now() - seenTried < 60000) return; // a refused write is retried at most once a minute
-  seenTried = Date.now();
-  seenBusy = true;
+  seenTried = Date.now(); seenBusy = true;
   try {
-    const [id, crew] = [await anonId(uid), await anonId(state.auth.crewId)]; if (!id) return;
-    const p = P(state.user);
+    const acct = await anonId(uid), crew = await anonId(state.auth.crewId); if (!acct) return;
     // Only remember "counted today" once the server has it, so a refused or offline write is tried again later.
-    await markSeen(id, today, { v: APP_VERSION, crew, people: profileIds().length, days: p.onboardedAt ? +p.daysPerWeek || 4 : 4, style: p.planStyle || "auto",
-      len: +p.sessionLen || 60, goals: (p.goals || []).slice(0, 8), exp: p.experience || "", home: (p.homeGear || []).length > 0, tailored: (p.tailorList || []).length });
-    store.set(key, today);
-  } catch { /* try again on a later render */
+    if (needA) { await markSeen(acct, today, { v: APP_VERSION, crew, people: profileIds().length }); store.set(akey, today); }
+    if (needP) {
+      const pid = await anonId(`${uid}|${state.user}`), p = P(state.user);
+      await markPerson(pid, today, { acct, v: APP_VERSION, crew, days: p.onboardedAt ? +p.daysPerWeek || 4 : 4, style: p.planStyle || "auto",
+        len: +p.sessionLen || 60, goals: (p.goals || []).slice(0, 8), exp: p.experience || "", home: (p.homeGear || []).length > 0, tailored: (p.tailorList || []).length });
+      store.set(pkey, today);
+    }
+  } catch { /* try again later */
   } finally { seenBusy = false; }
 }
+// What gets used: every tap (by action name only, never the value), each tab opened, and minutes with the app on screen.
+// Counted on the phone and sent as one write every minute or so, and when the app goes to the background.
+const evBuf = {}; let evTimer = null, visStart = document.visibilityState === "visible" ? Date.now() : 0;
+function ev(name, n = 1) {
+  if (!state.auth?.user || !state.auth.crewId) return;
+  const k = String(name).replace(/[^A-Za-z0-9_]/g, "_").slice(0, 40); if (!k) return;
+  evBuf[k] = (evBuf[k] || 0) + n;
+  if (!evTimer) evTimer = setTimeout(flushEv, 60000);
+}
+function flushEv(final) {
+  clearTimeout(evTimer); evTimer = null;
+  if (final && visStart) { const sec = Math.round((Date.now() - visStart) / 1000); visStart = 0; if (sec > 0 && sec < 4 * 3600) evBuf.appSeconds = (evBuf.appSeconds || 0) + sec; }
+  const keys = Object.keys(evBuf); if (!keys.length || !state.auth?.crewId) return;
+  bump(TODAY(), { ev: { ...evBuf } }); for (const k of keys) delete evBuf[k];
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flushEv(true); else visStart = Date.now(); });
+addEventListener("pagehide", () => flushEv(true));
 
 function render() {
   const main = $("#main");
@@ -488,7 +655,15 @@ function viewToday() {
   const rem = notToday ? [] : reminders(u);
   const dl = deloadActive(u, date); const dlSug = notToday ? null : deloadSuggestion(u);
   const partner = other(u);
+  const rv = day !== "Bonus" && !state.showDay && !state.logDate ? reviewState(u, week) : null;
+  const weekRow = `<div class="week-row"><span class="eyebrow">${ci.week === week ? "This week" : "Week " + week} · ${S.fmtDate(slotDate(week, "Mon"))} to ${S.fmtDate(S.addDays(slotDate(week, "Mon"), 6))}</span>${seg("selWeek", week, [["A", "Week A"], ["B", "Week B"]], "Week")}</div>`;
+  if (rv) return `
+  ${state.partner ? `<section class="card"><span class="eyebrow">Partner mode · logging for</span>${personToggle("logUser", u)}</section>` : ""}
+  <section class="today-top">${weekRow}</section>
+  ${weekReview(u, week, rv)}`;
+  const backToReview = (state.showDay || day === "Bonus") && !state.logDate && reviewState(u, week) ? `<button class="btn small rv-back" data-act="reviewBack">${icon("chevron", 16, { stroke: 2 })} Week ${week} review</button>` : "";
   return `
+  ${backToReview}
   ${state.partner ? `<section class="card"><span class="eyebrow">Partner mode · logging for</span>${personToggle("logUser", u)}</section>` : ""}
   ${state.logDate ? `<div class="banner">Logging for ${S.fmtDate(date)}. <button class="btn small" data-act="backToToday">Back to today</button></div>` : notToday ? `<div class="banner">Week ${esc(week)} ${esc(dayName(day))} was logged on ${S.fmtDate(date)}.</div>` : ""}
   ${rem.length && !focusOn() ? `<section class="reminders" aria-labelledby="rem-title"><h2 class="rem-title" id="rem-title">${icon("pulse", 16, { stroke: 2 })}${rem.every(r => r.id === "weigh" || r.id === "measure") ? "Set your starting point" : "Reminders"}</h2>${rem.map(r => `<div class="rem"><p>${esc(r.text)}</p><button class="btn pill" data-act="goView" data-v="${r.view}">Open</button><button class="icon-btn round ghost" data-act="dismissRem" data-v="${r.id}" aria-label="Dismiss until tomorrow: ${esc(r.text)}">${icon("x", 18, { stroke: 2 })}</button></div>`).join("")}</section>` : ""}
@@ -499,12 +674,13 @@ function viewToday() {
     const pick = autoSel();
     if (pick.complete && pick.week === week && ci.week === week) {
       const n = daysFor(u, week).length, bonusToday = bonusDates(u).includes(TODAY());
-      return `<div class="banner">${n === 1 ? "This week's workout is done." : n === 2 ? "Both days done this week." : `All ${n} days done this week.`} Week ${week === "A" ? "B" : "A"} starts Monday at Day 1.${n < 7 ? ` Up for a bonus day? <span class="row" style="margin-top:8px"><button class="btn small primary" data-act="bonusOpen">Start a bonus day</button>${bonusToday ? "<b>Bonus cardio logged today.</b>" : `<button class="btn small" data-act="bonusLog">Just log some cardio</button>`}</span>` : ""}</div>${state.bonusPicker ? bonusPicker(u) : ""}`;
+      if (state.showDay) return "";
+      return `<div class="banner">That's the last one this week. Tap <b>Finish workout</b> when you're done to see your week in review.</div>`;
     }
     return ""; })()}
   ${dl ? `<div class="banner"><b>Lighter week</b> until ${S.fmtDate(deloadOf(u).to)}: about 60% of your usual weights and one less set. <button class="btn small" data-act="endDeload">End it early</button></div>` : dlSug ? `<div class="banner">${esc(dlSug)} <button class="btn small" data-act="startDeload">Start a lighter week</button></div>` : ""}
   <section class="today-top" aria-labelledby="today-title">
-    <div class="week-row"><span class="eyebrow">${ci.week === week ? "This week" : "Week " + week} · ${S.fmtDate(slotDate(week, "Mon"))} to ${S.fmtDate(S.addDays(slotDate(week, "Mon"), 6))}</span>${seg("selWeek", week, [["A", "Week A"], ["B", "Week B"]], "Week")}</div>
+    ${weekRow}
     <div class="chips day-tiles" role="group" aria-label="Day" style="--cols:${Math.min(4, daysFor(u, week).length)}">${(() => { const nx = nextPlanDay(); return daysFor(u, week).map(d => { const ds = dayStatus(u, week, d); const next = ci.week === week && !nx.complete && nx.day === d && ds.state !== "done";
       const note = ds.state === "done" ? `✓ ${S.fmtDate(ds.date)}` : ds.state === "missed" ? "Missed" : next ? "Up next" : "";
       const sr = ds.state === "done" ? `done ${S.fmtDate(ds.date)}` : ds.state === "missed" ? "missed" : next ? "up next" : "not done yet";
@@ -1489,6 +1665,7 @@ document.addEventListener("twp-timer-done", e => {
 
 // ---------------------------------------------------------------- settings
 function openSettings() {
+  if (state.overlay !== "settings") ev("v_settings");
   state.overlay = "settings";
   const u = state.user; const p = P(u); const cs = cycleStart(); const ci = S.cycleInfo(TODAY(), cs); const g = gymSet();
   const one = (act, cur, opts) => `<div class="seg" role="group">${opts.map(([v, l]) => `<button type="button" data-act="${act}" data-v="${v}" aria-pressed="${cur === v}">${esc(l)}</button>`).join("")}</div>`;
@@ -2056,6 +2233,7 @@ function setValue(c, f, val, typingIn) {
 function toTop() { $("#main")?.scrollTo(0, 0); window.scrollTo(0, 0); }
 function go(view) {
   if (view === "report") { view = "progress"; state.progTab = "report"; }
+  if (view !== state.view) ev(`v_${view}`);
   state.view = view; state.confirmDel = null; store.set("twp-view", view); render(); toTop();
   const h = $("#main h2, #main h1, #main h3"); if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }); }
   A.announce(`${VIEW_NAMES[view]} tab`);
@@ -2080,6 +2258,7 @@ document.addEventListener("contextmenu", e => { if (e.target.closest?.('[data-ac
 document.addEventListener("click", e => {
   const el = e.target.closest("[data-act]"); if (!el) return;
   const act = el.dataset.act; const v = el.dataset.v;
+  ev(`t_${act}`);
   switch (act) {
     case "newProfile": openOnboarding(null); break;
     case "obRetake": openOnboarding(state.user); break;
@@ -2208,7 +2387,14 @@ document.addEventListener("click", e => {
     case "pickUser": if (state.auth.crewId && state.auth.user && (!me()?.profileId || me()?.profileId !== el.dataset.u) && !state.partner) updateMember(state.auth.crewId, state.auth.user.uid, { profileId: el.dataset.u }).catch(() => {});
       state.user = el.dataset.u; state.viewUser = state.user; state.logUser = state.user; state.sel = null; store.set("twp-user", state.user); if (state.overlay) closeOverlay(); render(); break;
     case "logUser": state.logUser = el.dataset.u; render(); break;
-    case "selWeek": state.sel.week = v; state.userTouchedSel = true; render(); break;
+    case "selWeek": state.sel.week = v; state.userTouchedSel = true; state.showDay = false; render(); break;
+    case "reviewDay": {
+      const wk = state.sel.week;
+      if (v === "Bonus") { const dt = el.dataset.date || TODAY(); state.sel = { week: wk, day: "Bonus" }; state.logDate = dt === TODAY() ? null : dt; if (dt !== TODAY()) state.bonusPick = null; }
+      else state.sel = { week: wk, day: v };
+      state.showDay = true; state.userTouchedSel = true; render(); toTop(); $("#today-title")?.focus(); break; }
+    case "reviewBack": state.showDay = false; state.logDate = null; if (state.sel.day === "Bonus") state.sel = { ...state.sel, day: daysFor(LU(), state.sel.week).at(-1) }; render(); toTop(); $("#rv-h")?.focus(); break;
+    case "reviewStretch": { const st = strState(); st.pick = "today"; st.minutes = 15; go("stretch"); break; }
     case "selDay": state.sel.day = v; state.userTouchedSel = true; render(); break;
     case "backToToday": state.logDate = null; state.sel = null; state.userTouchedSel = false; render(); break;
     case "variant": {
@@ -2457,6 +2643,7 @@ document.addEventListener("submit", e => {
 });
 document.addEventListener("change", e => {
   const el = e.target; const act = el.dataset.act;
+  if (act || el.dataset.a11y || el.dataset.gym) ev(`c_${act || (el.dataset.a11y ? `a11y_${el.dataset.a11y}` : "gym")}`);
   if (act === "progEx") { state.progEx = el.value; render(); }
   if (act === "setAccent") { saveProfile(state.user, { accent: el.value }); setTimeout(() => { applyAppearance(); render(); }, 60); }
   if (act === "setSound") saveProfile(state.user, { sound: el.checked });
@@ -2517,6 +2704,7 @@ function startCrew(id) {
   if (state.auth.crewId === id && stopData) return;
   stopData?.(); stopCrew?.(); resetData();
   state.auth.crewId = id; store.set(`twp-crew-${state.auth.user.uid}`, id);
+  ev("app_open");
   stopData = connect(id, onData, onStatus);
   stopFb?.(); stopFb = watchFeedback(state.auth.user.uid, isAdmin(), list => { state.fb = list; fbNotify(list); drawFeedback(); });
   stopCrew = watchCrew(id, crew => {
