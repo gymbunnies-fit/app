@@ -16,7 +16,7 @@ import { connect, save, remove, patch, dropField, signOutAndClear, importAll, CO
 
 // ---------------------------------------------------------------- helpers
 // Shown at the bottom of Settings so you can tell whether a phone has the latest update. Bump with sw.js VERSION.
-const APP_VERSION = "45";
+const APP_VERSION = "46";
 // The app's name lives here only (plus app-v41.webmanifest and the <title> tags in index.html, which can't read JS).
 const APP_NAME = "GymBunnies.fit";
 const $ = (s, r = document) => r.querySelector(s);
@@ -400,17 +400,21 @@ async function anonId(text) {
   catch { return null; }
 }
 function track(fields) { if (state.auth?.user && state.auth.crewId) bump(TODAY(), fields); }
-let seenBusy = false;
+let seenBusy = false, seenTried = 0;
 async function trackSeen() {
   const uid = state.auth?.user?.uid; if (!uid || !state.auth.crewId || !state.user || !state.flags.profiles || seenBusy) return;
   const key = `gb-seen-${uid}`, today = TODAY(); if (store.get(key, "") === today) return;
+  if (Date.now() - seenTried < 60000) return; // a refused write is retried at most once a minute
+  seenTried = Date.now();
   seenBusy = true;
   try {
     const [id, crew] = [await anonId(uid), await anonId(state.auth.crewId)]; if (!id) return;
     const p = P(state.user);
-    markSeen(id, today, { v: APP_VERSION, crew, people: profileIds().length, days: p.onboardedAt ? +p.daysPerWeek || 4 : 4, style: p.planStyle || "auto",
+    // Only remember "counted today" once the server has it, so a refused or offline write is tried again later.
+    await markSeen(id, today, { v: APP_VERSION, crew, people: profileIds().length, days: p.onboardedAt ? +p.daysPerWeek || 4 : 4, style: p.planStyle || "auto",
       len: +p.sessionLen || 60, goals: (p.goals || []).slice(0, 8), exp: p.experience || "", home: (p.homeGear || []).length > 0, tailored: (p.tailorList || []).length });
     store.set(key, today);
+  } catch { /* try again on a later render */
   } finally { seenBusy = false; }
 }
 

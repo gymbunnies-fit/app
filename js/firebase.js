@@ -112,7 +112,7 @@ export function bump(date, fields) {
   setDoc(doc(db, "daily", date), Object.fromEntries(Object.entries(fields).filter(([, n]) => n).map(([k, n]) => [k, increment(n)])), { merge: true }).catch(() => {});
 }
 export function markSeen(id, date, data) {
-  setDoc(doc(db, "usage", id), { ...data, last: date, seen: arrayUnion(date) }, { merge: true }).catch(() => {});
+  return setDoc(doc(db, "usage", id), { ...data, last: date, seen: arrayUnion(date) }, { merge: true });
 }
 
 // ---------------------------------------------------------------- feedback
