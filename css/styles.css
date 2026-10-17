@@ -879,3 +879,27 @@ body.shell.kb-open{padding-bottom:0}
 .fb-st.fb-new{background:var(--accent);color:var(--on-accent)}
 .fb-st.fb-planned{background:var(--plate-soft);color:var(--plate)}
 .fb-st.fb-done{background:var(--good-soft);color:var(--good)}
+
+/* ---------------------------------------------------------------- Large-text layout
+   Designed for Large and up: things stack instead of squeezing, and words never split mid-word.
+   Only long unbroken text (an email address) may wrap inside itself. */
+body.a11y-big-text *{overflow-wrap:normal}
+body.a11y-big-text :is(p,li,dd,td,.small,.muted,.why,.field>span,.list-item div){overflow-wrap:break-word}
+body.a11y-big-text :is(.btn,button,.tag,.big-num,.mono,.clock,.stat .v,.ex-scheme,.ex-num){overflow-wrap:normal;word-break:normal;hyphens:none}
+body.a11y-big-text :is(.big-num,.stat .v,.ex-scheme,.mono){white-space:nowrap}
+body.a11y-big-text .btn{flex:none;max-width:100%;white-space:normal}
+body.a11y-big-text :is(.row,.timerbar,.list-item,.between){flex-wrap:wrap;row-gap:8px}
+/* Exercise cards: the sets-and-reps target moves under the name instead of squeezing it */
+body.a11y-big-text .ex-toggle,body.a11y-big-text .ex-toggle:not(.x){grid-template-columns:32px minmax(0,1fr)}
+body.a11y-big-text .ex-toggle :is(.ex-scheme,.ex-last){grid-column:2}
+body.a11y-big-text .ex-name{text-wrap:wrap}
+/* Day tiles grow to fit the title and the date under it */
+body.a11y-big-text .chips.day-tiles button{height:auto;min-height:72px;padding:10px 8px;gap:4px}
+body.a11y-big-text .day-tiles .m{white-space:normal}
+/* Number tiles: one per row once two side by side can't hold a big number */
+body.a11y-huge-text :is(.stat-tiles,.stats){grid-template-columns:1fr}
+/* Crew week grid: avatars only, so all seven days fit */
+body.a11y-big-text .crew-week .cw-name{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+body.a11y-big-text .crew-week :is(th,td){padding:4px 2px;font-size:.8rem}
+body.a11y-big-text .crew-week th[scope=row] .av{margin:0}
+body.a11y-big-text .day-tiles .today-dot{position:static;font-size:.7rem}

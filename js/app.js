@@ -16,7 +16,7 @@ import { connect, save, remove, patch, dropField, signOutAndClear, importAll, CO
 
 // ---------------------------------------------------------------- helpers
 // Shown at the bottom of Settings so you can tell whether a phone has the latest update. Bump with sw.js VERSION.
-const APP_VERSION = "42";
+const APP_VERSION = "43";
 // The app's name lives here only (plus app-v41.webmanifest and the <title> tags in index.html, which can't read JS).
 const APP_NAME = "GymBunnies.fit";
 const $ = (s, r = document) => r.querySelector(s);
@@ -1676,8 +1676,8 @@ function viewCrew() {
       ${full.length > 1 ? `<div class="stats crew-stats"><div class="stat"><div class="v">${tot.w}</div><div class="l">Workouts together this cycle</div></div><div class="stat"><div class="v">${tot.s}</div><div class="l">Sets</div></div><div class="stat"><div class="v">${tot.l.toLocaleString()}</div><div class="l">Pounds moved</div></div><div class="stat"><div class="v">${tot.p}</div><div class="l">Personal bests</div></div></div>` : ""}
     </section>
     <section class="card"><h3 class="h3">This week</h3>
-      <div class="scroll"><table class="t crew-week"><caption class="visually-hidden">Who trained each day this week</caption><thead><tr><th scope="col">Person</th>${week.map((d, i) => `<th scope="col" class="${d === t ? "today" : ""}"><span aria-hidden="true">${DN[i][0]}</span><span class="visually-hidden">${DN[i]}</span></th>`).join("")}</tr></thead>
-      <tbody>${visible.map(id => `<tr><th scope="row">${avatarHtml(id)} ${esc(P(id).name)}</th>${week.map(d => { const did = st[id].days.has(d); return `<td class="${did ? "did" : ""} ${d === t ? "today" : ""}">${did ? `<span aria-hidden="true">✓</span><span class="visually-hidden">trained</span>` : d > t ? "" : `<span aria-hidden="true">·</span><span class="visually-hidden">rest</span>`}</td>`; }).join("")}</tr>`).join("")}</tbody></table></div></section>
+      <div class="scroll"><table class="t crew-week"><caption class="visually-hidden">Who trained each day this week</caption><thead><tr><th scope="col"><span class="cw-name">Person</span></th>${week.map((d, i) => `<th scope="col" class="${d === t ? "today" : ""}"><span aria-hidden="true">${DN[i][0]}</span><span class="visually-hidden">${DN[i]}</span></th>`).join("")}</tr></thead>
+      <tbody>${visible.map(id => `<tr><th scope="row">${avatarHtml(id)} <span class="cw-name">${esc(P(id).name)}</span></th>${week.map(d => { const did = st[id].days.has(d); return `<td class="${did ? "did" : ""} ${d === t ? "today" : ""}">${did ? `<span aria-hidden="true">✓</span><span class="visually-hidden">trained</span>` : d > t ? "" : `<span aria-hidden="true">·</span><span class="visually-hidden">rest</span>`}</td>`; }).join("")}</tr>`).join("")}</tbody></table></div></section>
     ${ids.map(card).join("")}
     ${hidden.length ? `<p class="small muted">${esc(listText(hidden.map(id => P(id).name)))} ${hidden.length === 1 ? "keeps" : "keep"} their progress private.</p>` : ""}
     ${crewCard()}`;
