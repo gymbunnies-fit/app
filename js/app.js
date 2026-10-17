@@ -16,7 +16,7 @@ import { connect, save, remove, patch, dropField, signOutAndClear, importAll, CO
 
 // ---------------------------------------------------------------- helpers
 // Shown at the bottom of Settings so you can tell whether a phone has the latest update. Bump with sw.js VERSION.
-const APP_VERSION = "37";
+const APP_VERSION = "38";
 // The app's name lives here only (plus manifest.webmanifest and the <title> tags in index.html, which can't read JS).
 const APP_NAME = "GymBunnies.fit";
 const $ = (s, r = document) => r.querySelector(s);
@@ -2068,7 +2068,7 @@ const holdStop = () => { clearTimeout(holdT); clearInterval(holdI); holdT = hold
 document.addEventListener("pointerdown", e => {
   const el = e.target.closest('[data-act="step"]'); if (!el) return;
   holdStop(); holdFired = false;
-  holdT = setTimeout(() => { holdFired = true; stepOnce(el); holdI = setInterval(() => (el.isConnected ? stepOnce(el) : holdStop()), 110); }, 380);
+  holdT = setTimeout(() => { holdFired = true; stepOnce(el); holdI = setInterval(() => (el.isConnected ? stepOnce(el) : holdStop()), 250); }, 500);
 });
 for (const t of ["pointerup", "pointercancel", "blur"]) window.addEventListener(t, holdStop, true);
 document.addEventListener("visibilitychange", holdStop);

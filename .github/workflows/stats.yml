@@ -1,7 +1,7 @@
 name: Usage stats
 on:
   schedule:
-    - cron: "17 */3 * * *"
+    - cron: "5 4 * * *" # 12:05 AM Atlanta time (11:05 PM in winter)
   workflow_dispatch:
 permissions:
   contents: write
