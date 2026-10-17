@@ -2,33 +2,33 @@
   "name": "GymBunnies.fit",
   "short_name": "GymBunnies.fit",
   "description": "GymBunnies.fit: a two-week workout plan and tracker for training partners.",
-  "start_url": "./",
-  "scope": "./",
+  "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#201f1d",
   "theme_color": "#201f1d",
   "icons": [
     {
-      "src": "icons/apple-touch-icon.png",
+      "src": "icons/app-icon-180.png",
       "sizes": "180x180",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "icons/icon-192.png",
+      "src": "icons/app-icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "icons/icon-512.png",
+      "src": "icons/app-icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "icons/icon-512.png",
+      "src": "icons/app-icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
