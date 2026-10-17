@@ -868,3 +868,14 @@ body.shell #main{flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scr
 body.shell nav.tabs{position:relative;flex:none;left:auto;right:auto;bottom:auto}
 body.shell .sticky-cta{bottom:8px}
 body.shell.kb-open{padding-bottom:0}
+
+/* feedback */
+.fb-list{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.fb-item{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:grid;gap:6px}
+.fb-item p{margin:0}
+.fb-text{white-space:pre-wrap}
+.fb-reply{background:var(--inset);border-radius:8px;padding:8px 10px}
+.fb-st{background:var(--inset);color:var(--muted)}
+.fb-st.fb-new{background:var(--accent);color:var(--on-accent)}
+.fb-st.fb-planned{background:var(--plate-soft);color:var(--plate)}
+.fb-st.fb-done{background:var(--good-soft);color:var(--good)}

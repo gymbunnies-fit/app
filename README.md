@@ -99,3 +99,9 @@ The Firebase config in `js/firebase.js` is meant to be public. Access is control
 ## Installing on a phone
 - **iPhone:** open the site in Safari → Share → Add to Home Screen.
 - **Android:** open it in Chrome → ⋮ menu → Install app.
+
+## Feedback and usage stats
+
+- **Feedback:** Settings → Feedback and ideas. Messages go to `feedback/*` in Firestore. The sender sees their own messages and replies; the admin (mathew.lovell@gmail.com) gets an Inbox button to set a status and reply.
+- **Anonymous stats:** the app adds to counters in `daily/{date}` and marks `usage/{hashed account}` once a day. No names, emails, or workout details. Both are publicly readable.
+- **Summary:** `.github/workflows/stats.yml` runs `tools/stats.mjs` every 3 hours and force-pushes `stats.json` to the `stats` branch.

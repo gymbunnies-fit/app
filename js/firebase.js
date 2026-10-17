@@ -8,7 +8,8 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-  collection, doc, setDoc, getDoc, getDocs, deleteDoc, onSnapshot, writeBatch, updateDoc, deleteField, FieldPath, terminate, clearIndexedDbPersistence
+  collection, doc, setDoc, getDoc, getDocs, deleteDoc, onSnapshot, writeBatch, updateDoc, deleteField, FieldPath, terminate, clearIndexedDbPersistence,
+  increment, arrayUnion, addDoc, query, where
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -102,6 +103,26 @@ export async function newInviteCode(id, old) {
   if (old) await deleteDoc(doc(db, "codes", old)).catch(() => {});
   return code;
 }
+
+// ---------------------------------------------------------------- anonymous usage stats
+// Two top-level collections, readable by anyone, holding no names or emails:
+// daily/{YYYY-MM-DD}: counters (workouts, sets, stretches, ...) summed across everyone.
+// usage/{hashed account id}: which days an account opened the app, plus a coarse plan summary.
+export function bump(date, fields) {
+  setDoc(doc(db, "daily", date), Object.fromEntries(Object.entries(fields).filter(([, n]) => n).map(([k, n]) => [k, increment(n)])), { merge: true }).catch(() => {});
+}
+export function markSeen(id, date, data) {
+  setDoc(doc(db, "usage", id), { ...data, last: date, seen: arrayUnion(date) }, { merge: true }).catch(() => {});
+}
+
+// ---------------------------------------------------------------- feedback
+// feedback/{id}: written by the sender, readable by the sender and the admin, answered by the admin.
+export const sendFeedback = data => addDoc(collection(db, "feedback"), data);
+export function watchFeedback(uid, all, cb) {
+  const q = all ? collection(db, "feedback") : query(collection(db, "feedback"), where("uid", "==", uid));
+  return onSnapshot(q, snap => cb(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => cb(null));
+}
+export const answerFeedback = (id, fields) => updateDoc(doc(db, "feedback", id), fields);
 
 // ---------------------------------------------------------------- crew data
 export function connect(id, onData, onStatus) {

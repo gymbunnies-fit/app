@@ -11,11 +11,12 @@ import { safetyFor } from "./safety.js";
 import * as S from "./stats.js";
 import { BUILTIN, GYM, EQUIP, PATTERN, JOINTS, POSITION, LEVEL, PLAN_PATTERN, PLAN_MACHINES, STRETCH_BY_FOCUS, normalizeLib } from "./library.js";
 import { connect, save, remove, patch, dropField, signOutAndClear, importAll, COLLECTIONS, watchAuth, signInGoogle, signInEmail, createEmailAccount, resetPassword, addGoogle, addPassword, currentInfo,
-  getUserDoc, setUserDoc, createCrew, joinCrew, watchCrew, updateMember, removeMember, renameCrew, newInviteCode, readLegacy } from "./firebase.js";
+  getUserDoc, setUserDoc, createCrew, joinCrew, watchCrew, updateMember, removeMember, renameCrew, newInviteCode, readLegacy,
+  bump, markSeen, sendFeedback, watchFeedback, answerFeedback } from "./firebase.js";
 
 // ---------------------------------------------------------------- helpers
 // Shown at the bottom of Settings so you can tell whether a phone has the latest update. Bump with sw.js VERSION.
-const APP_VERSION = "36";
+const APP_VERSION = "37";
 // The app's name lives here only (plus manifest.webmanifest and the <title> tags in index.html, which can't read JS).
 const APP_NAME = "GymBunnies.fit";
 const $ = (s, r = document) => r.querySelector(s);
@@ -171,6 +172,7 @@ function toast(msg, spoken = null) {
 
 // ---------------------------------------------------------------- state
 const state = {
+  fb: [], fbMode: null, fbDraft: null,
   user: store.get("twp-user", null),
   partner: store.get("twp-partner", false),
   view: store.get("twp-view", "today"),
@@ -250,6 +252,7 @@ function writeSession(u, date, fields) {
   const cur = sessionFor(u, date);
   if (cur) { patch("sessions", cur.id, fields); return; }
   const extra = state.sel.day === "Bonus" ? (({ focus, where }) => ({ bonusFocus: focus, bonusWhere: where }))(bonusPickFor(u, state.sel.week)) : isHome(u, date) ? { atHome: true } : {};
+  if (fields.ex || fields.cardio?.done) track({ workouts: 1, home: extra.atHome || extra.bonusWhere === "home" ? 1 : 0, bonus: state.sel.day === "Bonus" ? 1 : 0 });
   patch("sessions", sid(u, date), { user: u, date, week: state.sel.week, day: state.sel.day, ...extra, ...fields });
 }
 // Exercises are stored as a map keyed by exercise id (ex.<id>); older records used an array. Readers get one sorted array.
@@ -388,6 +391,29 @@ function todaysList(u, date) {
 }
 
 // ---------------------------------------------------------------- render
+// ---------------------------------------------------------------- anonymous usage stats
+// Counts only: no names, emails, or workout details leave the crew. See firestore.rules (daily, usage).
+const ADMINS = ["mathew.lovell@gmail.com"];
+const isAdmin = () => ADMINS.includes((state.auth?.user?.email || "").toLowerCase());
+async function anonId(text) {
+  try { const h = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`gymbunnies:${text}`)); return [...new Uint8Array(h)].slice(0, 8).map(b => b.toString(16).padStart(2, "0")).join(""); }
+  catch { return null; }
+}
+function track(fields) { if (state.auth?.user && state.auth.crewId) bump(TODAY(), fields); }
+let seenBusy = false;
+async function trackSeen() {
+  const uid = state.auth?.user?.uid; if (!uid || !state.auth.crewId || !state.user || !state.flags.profiles || seenBusy) return;
+  const key = `gb-seen-${uid}`, today = TODAY(); if (store.get(key, "") === today) return;
+  seenBusy = true;
+  try {
+    const [id, crew] = [await anonId(uid), await anonId(state.auth.crewId)]; if (!id) return;
+    const p = P(state.user);
+    markSeen(id, today, { v: APP_VERSION, crew, people: profileIds().length, days: p.onboardedAt ? +p.daysPerWeek || 4 : 4, style: p.planStyle || "auto",
+      len: +p.sessionLen || 60, goals: (p.goals || []).slice(0, 8), exp: p.experience || "", home: (p.homeGear || []).length > 0, tailored: (p.tailorList || []).length });
+    store.set(key, today);
+  } finally { seenBusy = false; }
+}
+
 function render() {
   const main = $("#main");
   destroyCharts();
@@ -398,6 +424,7 @@ function render() {
     return;
   }
   if (state.user && state.flags.profiles && !profileIds().includes(state.user)) state.user = null;
+  trackSeen();
   applyAppearance();
   if (!state.user) {
     $("#tabs").classList.add("hidden"); $("#who").classList.add("hidden");
@@ -1329,6 +1356,7 @@ function finishOnboarding() {
   for (const exId of Object.keys(tailor)) delete state.variants[`${id}:${exId}`];
   store.set("twp-variants", state.variants);
   if (!o.id && !state.user) { state.user = id; state.viewUser = id; store.set("twp-user", id); }
+  if (!o.id) track({ onboarded: 1 });
   state.ob = null; closeOverlay();
   toast(o.id ? "Your plan is updated." : `Welcome, ${name}! Your plan is ready.`); render();
 }
@@ -1442,6 +1470,7 @@ function strFinish(early = false) {
   const secs = run.steps.slice(0, run.i).reduce((n, x) => n + x.seconds, 0) + (early ? 0 : 0);
   const minutes = Math.max(1, Math.round(secs / 60));
   if (secs >= 45) {
+    track({ stretches: 1 });
     const id = `${state.user}-${TODAY()}-stretch-${Date.now()}`;
     save("activities", id, { user: state.user, date: TODAY(), type: "Stretch", minutes, routine: st.pick, title: run.title });
     st.finished = { id, minutes, title: run.title, feel: null };
@@ -1474,6 +1503,9 @@ function openSettings() {
     <section class="card"><h3 class="h3">Share GymBunnies.fit</h3>
       <p class="small">Sends the link with the GymBunnies.fit preview card. Use this instead of the browser's share button, which sends a picture of your screen.</p>
       <button class="btn primary small" data-act="shareApp">Share the app</button></section>
+    <section class="card"><h3 class="h3">Feedback and ideas</h3>
+      <p class="small">Something broken, or an idea for the app? Send it to Mat and Benny.${fbMine().filter(f => f.reply).length ? ` You have ${fbMine().filter(f => f.reply).length} repl${fbMine().filter(f => f.reply).length === 1 ? "y" : "ies"}.` : ""}</p>
+      <div class="row"><button class="btn primary small" data-act="fbOpen">Send feedback</button>${isAdmin() ? `<button class="btn small" data-act="fbInbox">Inbox${fbNew() ? ` (${fbNew()} new)` : ""}</button>` : ""}</div></section>
     <section class="card"><h3 class="h3">Your plan</h3>
       <p class="small">${p.onboardedAt ? `Tailored from your questionnaire: ${p.daysPerWeek || 4} day${(p.daysPerWeek || 4) === 1 ? "" : "s"} a week${(p.tailorList || []).length ? `, ${p.tailorList.length} exercise${p.tailorList.length === 1 ? "" : "s"} adjusted for you` : ""}.` : "Answer a few questions about your goals, injuries, and schedule, and the plan adjusts to fit you."}</p>
       <div class="row"><button class="btn primary small" data-act="obRetake">${p.onboardedAt ? "Retake the questionnaire" : "Tailor my plan"}</button>${(p.tailorList || []).length ? `<button class="btn small" data-act="tailorOff">Use the standard plan</button>` : ""}</div></section>
@@ -1491,13 +1523,8 @@ function openSettings() {
       <div class="field"><span>Fun level</span>${one("setFun", p.fun || "medium", [["light", "Light"], ["medium", "Medium"], ["full", "Full"]])}<p class="small muted">${esc(FUN_LEVELS[p.fun || "medium"])}</p></div>
       <label class="check"><input type="checkbox" data-act="setSound" ${p.sound !== false ? "checked" : ""}><span>Sounds and vibration</span></label></section>
     <section class="card"><h3 class="h3">Our gym</h3>
-      <p class="small muted">Shared by everyone. Sets how the + and − buttons step.</p>
-      <div class="grid2">
-        <label class="field">Small dumbbell step (lb)<input type="number" step="any" data-gym="dbSmallStep" value="${esc(g.dbSmallStep ?? 2.5)}"></label>
-        <label class="field">…up to (lb), then 5 lb steps<input type="number" step="any" data-gym="dbSmallUpTo" value="${esc(g.dbSmallUpTo ?? 25)}"></label>
-        <label class="field">Machine step (lb)<input type="number" step="any" data-gym="machineStep" value="${esc(g.machineStep ?? 5)}"></label>
-        <label class="field">Smith bar weight (lb)<input type="number" step="any" data-gym="smithBar" value="${esc(g.smithBar ?? "")}" placeholder="Check at the gym"></label>
-      </div></section>
+      <p class="small muted">Shared by everyone. Weights step by 2.5 lb; hold + or − to keep going.</p>
+      <label class="field">Smith bar weight (lb)<input type="number" step="any" data-gym="smithBar" value="${esc(g.smithBar ?? "")}" placeholder="Check at the gym"></label></section>
     <section class="card"><h3 class="h3">Two-week cycle</h3>
       <label class="field">Week A started on (a Monday)<input type="date" data-act="cycleStart" value="${cs}"></label>
       <p class="small muted">Today is in Week ${ci.week}. Shared by everyone.</p></section>
@@ -1517,6 +1544,46 @@ function setA11y(patch) {
   applyAppearance(); render(); if (state.overlay === "a11y") drawA11y();
 }
 const a11yOn = () => { const a = A.get(); return Object.keys(A.DEFAULTS).filter(k => a[k] !== A.DEFAULTS[k]).length; };
+// ---------------------------------------------------------------- feedback
+const FB_KINDS = { bug: "Something's broken", idea: "Feature idea", other: "Something else" };
+const FB_STATUS = { new: "New", seen: "Read", planned: "Planned", done: "Done", no: "Not now" };
+const fbMine = () => (state.fb || []).filter(f => f.uid === state.auth?.user?.uid).sort((a, b) => b.at - a.at);
+const fbNew = () => (state.fb || []).filter(f => f.status === "new").length;
+function fbWhen(t) { return t ? new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : ""; }
+function fbItem(f, admin) {
+  return `<li class="fb-item"><div class="between"><b>${esc(FB_KINDS[f.kind] || "Feedback")}</b><span class="tag fb-st fb-${esc(f.status)}">${esc(FB_STATUS[f.status] || f.status)}</span></div>
+    <p class="small muted">${admin ? `${esc(f.name || "Someone")}${f.crew ? ` · ${esc(f.crew)}` : ""} · ` : ""}${esc(fbWhen(f.at))} · v${esc(f.v || "?")}</p>
+    <p class="fb-text">${esc(f.text)}</p>
+    ${f.reply ? `<p class="fb-reply"><b>Reply:</b> ${esc(f.reply)}</p>` : ""}
+    ${admin ? `<div class="seg wrap" role="group" aria-label="Status">${Object.entries(FB_STATUS).map(([k, l]) => `<button type="button" data-act="fbStatus" data-id="${esc(f.id)}" data-v="${k}" aria-pressed="${f.status === k}">${esc(l)}</button>`).join("")}</div>
+      <label class="field">Reply (they see this in Settings)<textarea rows="2" id="fbr-${esc(f.id)}">${esc(f.reply || "")}</textarea></label>
+      <button class="btn small" data-act="fbReply" data-id="${esc(f.id)}">Save reply</button>` : ""}</li>`;
+}
+function openFeedback(mode = "send") { state.overlay = "feedback"; state.fbMode = mode; drawFeedback(); }
+function drawFeedback() {
+  if (state.overlay !== "feedback") return;
+  const admin = state.fbMode === "inbox" && isAdmin(), d = state.fbDraft || (state.fbDraft = { kind: "idea", text: "" });
+  const list = admin ? (state.fb || []).slice().sort((a, b) => (a.status === "new") - (b.status === "new") || a.at - b.at).reverse() : fbMine();
+  const keep = $("#fb-text") === document.activeElement;
+  $("#overlay").innerHTML = `<div class="overlay" role="dialog" aria-labelledby="fb-title"><div class="inner">
+    <div class="between"><h2 class="h2" id="fb-title">${admin ? "Feedback inbox" : "Feedback and ideas"}</h2><button class="btn small" data-act="fbBack">Back</button></div>
+    ${admin ? `<p class="small">${list.length} message${list.length === 1 ? "" : "s"}, ${fbNew()} new. Set a status and reply; the sender sees both in their Settings.</p>` : `
+    <section class="card"><p class="small">Found something broken, or wish the app did something? Tell Mat and Benny. They'll see your name with it, and any reply shows up here.</p>
+      <div class="seg wrap" role="group" aria-label="What kind">${Object.entries(FB_KINDS).map(([k, l]) => `<button type="button" data-act="fbKind" data-v="${k}" aria-pressed="${d.kind === k}">${esc(l)}</button>`).join("")}</div>
+      <label class="field">${d.kind === "bug" ? "What happened, and what did you expect?" : d.kind === "idea" ? "What would you like the app to do?" : "Your message"}<textarea id="fb-text" rows="5" maxlength="3000">${esc(d.text)}</textarea></label>
+      <button class="btn primary block" data-act="fbSend">Send</button></section>`}
+    ${state.fb === null ? `<p class="small muted">Can't load messages right now. Check your connection.</p>` : list.length ? `${admin ? "" : `<h3 class="h3">Your messages</h3>`}<ul class="fb-list">${list.map(f => fbItem(f, admin)).join("")}</ul>` : admin ? `<p class="muted">Nothing yet.</p>` : ""}
+  </div></div>`;
+  if (keep) $("#fb-text")?.focus();
+}
+// Let people know when Mat answers.
+function fbNotify(list) {
+  const uid = state.auth?.user?.uid; if (!list || !uid || isAdmin()) return;
+  const seen = store.get(`gb-fb-seen-${uid}`, 0);
+  const fresh = list.filter(f => f.uid === uid && f.replyAt && f.replyAt > seen);
+  if (fresh.length) { toast(`Mat replied to your ${fresh.length === 1 ? "message" : `${fresh.length} messages`}. See Settings → Feedback.`); store.set(`gb-fb-seen-${uid}`, Math.max(...fresh.map(f => f.replyAt))); }
+}
+
 function openA11y() { state.overlay = "a11y"; drawA11y(); }
 function drawA11y() {
   const a = A.get();
@@ -1926,6 +1993,7 @@ function saveExercise(c) {
   const planOrder = todaysList(c.u, c.date).map(x => x.ex.id);
   entry.order = planOrder.indexOf(c.id) >= 0 ? planOrder.indexOf(c.id) : 100 + planOrder.length;
   writeSession(c.u, c.date, { ex: { [c.id]: entry }, ...(!s?.startedAt && c.date === TODAY() ? { startedAt: Date.now() } : {}) });
+  if (!s?.ex?.[c.id]) track({ exercises: 1, sets: sets.length });
   store.del(dKey(c.u, c.date, c.id));
   store.set(xKey(c.u, c.date), getExtras(c.u, c.date).filter(x => x.id !== c.id));
   state.editing.delete(editKey(c.u, c.date, c.id));
@@ -2062,6 +2130,19 @@ document.addEventListener("click", e => {
     case "resetAccent": saveProfile(state.user, { accent: "" }); setTimeout(() => { applyAppearance(); openSettings(); render(); }, 60); break;
     case "setText": setA11y({ textSize: v }); openSettings(); break;
     case "openA11y": openA11y(); break;
+    case "fbOpen": openFeedback("send"); break;
+    case "fbInbox": openFeedback("inbox"); break;
+    case "fbBack": openSettings(); break;
+    case "fbKind": state.fbDraft = { ...state.fbDraft, text: $("#fb-text")?.value ?? state.fbDraft?.text ?? "", kind: v }; drawFeedback(); break;
+    case "fbSend": {
+      const text = ($("#fb-text")?.value || "").trim(); if (!text) { toast("Type your message first."); $("#fb-text")?.focus(); break; }
+      const kind = state.fbDraft?.kind || "idea";
+      sendFeedback({ uid: state.auth.user.uid, name: P(state.user)?.name || state.auth.user.name || "", crew: state.auth.crew?.name || "", kind, text, status: "new", at: Date.now(), v: APP_VERSION })
+        .then(() => { track({ feedback: 1 }); state.fbDraft = { kind, text: "" }; toast("Sent. Thank you!"); drawFeedback(); }, e => toast(`Couldn't send: ${e.message}`));
+      break; }
+    case "fbStatus": answerFeedback(el.dataset.id, { status: v }).catch(e => toast(e.message)); break;
+    case "fbReply": { const id = el.dataset.id; const reply = ($(`#fbr-${id}`)?.value || "").trim();
+      answerFeedback(id, { reply, replyAt: Date.now(), ...((state.fb || []).find(f => f.id === id)?.status === "new" ? { status: "seen" } : {}) }).then(() => toast("Reply saved."), e => toast(e.message)); break; }
     case "updateApp": closeOverlay(); checkForUpdate(true); break;
     case "a11ySet": { const k = el.dataset.k; const cur = A.DEFAULTS[k]; setA11y({ [k]: typeof cur === "number" ? +v : v }); A.announce(`${el.textContent} selected`); break; }
     case "a11yPreset": setA11y(A.applyPreset(v)); A.announce(`${A.PRESETS[v].label} options turned on`); toast(`${A.PRESETS[v].label} options are on.`); break;
@@ -2110,8 +2191,8 @@ document.addEventListener("click", e => {
     }
     case "crewJoin": { const code = $("#crew-code").value; const u = state.auth.user; busy(async () => { const id = await joinCrew(code, { uid: u.uid, name: u.name || u.email.split("@")[0], email: u.email }); startCrew(id); }); break; }
     case "crewCreate": { const name = $("#crew-name").value.trim() || "Our crew"; const u = state.auth.user; busy(async () => { const r = await createCrew(name, { uid: u.uid, name: u.name || u.email.split("@")[0], email: u.email, profileId: state.user || "" }); startCrew(r.id); patch("settings", "app", { cycleStart: S.mondayOf(TODAY()) }); }); break; }
-    case "shareApp": shareLink("GymBunnies.fit", "Check out GymBunnies.fit, the workout app we made."); break;
-    case "shareInvite": { const c = state.auth.crew?.code || ""; shareLink("Join my crew on GymBunnies.fit", `Join my crew on GymBunnies.fit! Sign in, then enter this invite code: ${c}`); break; }
+    case "shareApp": track({ shares: 1 }); shareLink("GymBunnies.fit", "Check out GymBunnies.fit, the workout app we made."); break;
+    case "shareInvite": { track({ shares: 1 }); const c = state.auth.crew?.code || ""; shareLink("Join my crew on GymBunnies.fit", `Join my crew on GymBunnies.fit! Sign in, then enter this invite code: ${c}`); break; }
     case "copyCode": { const c = state.auth.crew?.code || ""; navigator.clipboard?.writeText(c).then(() => toast("Invite code copied."), () => toast(c)); break; }
     case "newCode": newInviteCode(state.auth.crewId, state.auth.crew?.code).then(c => { toast(`New code: ${c}. The old one no longer works.`); openSettings(); }, e => toast(e.message)); break;
     case "crewRemove": { const uid = el.dataset.v; if (state.confirmDel !== uid) { state.confirmDel = uid; openSettings(); break; } state.confirmDel = null; removeMember(state.auth.crewId, uid).then(() => { toast("Removed from the crew."); openSettings(); }, e => toast(e.message)); break; }
@@ -2423,7 +2504,7 @@ function onStatus(status) { state.error = status.state === "error" ? status.mess
 
 // ---------------------------------------------------------------- sign-in & crews
 state.auth = { ready: false, user: null, crewId: null, crew: null, members: [], error: "", busy: false, mode: "signin", legacy: null };
-let stopData = null, stopCrew = null;
+let stopData = null, stopCrew = null, stopFb = null;
 const me = () => state.auth.members.find(m => m.uid === state.auth.user?.uid);
 const isOwner = () => state.auth.crew?.owner === state.auth.user?.uid;
 
@@ -2433,6 +2514,7 @@ function startCrew(id) {
   stopData?.(); stopCrew?.(); resetData();
   state.auth.crewId = id; store.set(`twp-crew-${state.auth.user.uid}`, id);
   stopData = connect(id, onData, onStatus);
+  stopFb?.(); stopFb = watchFeedback(state.auth.user.uid, isAdmin(), list => { state.fb = list; fbNotify(list); drawFeedback(); });
   stopCrew = watchCrew(id, crew => {
     if (!crew) {
       // Removed from the crew, or the crew is gone: go back to the join screen.
@@ -2447,7 +2529,7 @@ function startCrew(id) {
     render();
   });
 }
-function stopAll() { stopData?.(); stopCrew?.(); stopData = stopCrew = null; resetData(); Object.assign(state.auth, { crewId: null, crew: null, members: [] }); }
+function stopAll() { stopData?.(); stopCrew?.(); stopFb?.(); stopData = stopCrew = stopFb = null; state.fb = []; resetData(); Object.assign(state.auth, { crewId: null, crew: null, members: [] }); }
 
 watchAuth(async (u, err) => {
   if (err) state.auth.error = err;

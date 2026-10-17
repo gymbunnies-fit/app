@@ -3,6 +3,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null && request.auth.token.firebase.sign_in_provider != 'anonymous'; }
     function member(crewId) { return signedIn() && exists(/databases/$(database)/documents/crews/$(crewId)/members/$(request.auth.uid)); }
+    function admin() { return signedIn() && request.auth.token.email == 'mathew.lovell@gmail.com' && request.auth.token.email_verified == true; }
     function crewOwner(crewId) { return signedIn() && get(/databases/$(database)/documents/crews/$(crewId)).data.owner == request.auth.uid; }
 
     // Each person's pointer to their crew. Only they can see or change it.
@@ -16,6 +17,28 @@ service cloud.firestore {
       allow get: if signedIn();
       allow create: if member(request.resource.data.crewId);
       allow delete: if member(resource.data.crewId);
+    }
+
+    // Anonymous usage stats. No names or emails; anyone can read them (the stats dashboard does).
+    match /daily/{date} {
+      allow read: if true;
+      allow create, update: if signedIn() && date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && request.resource.data.keys().hasOnly(['workouts', 'home', 'bonus', 'exercises', 'sets', 'stretches', 'onboarded', 'feedback', 'shares']);
+    }
+    match /usage/{id} {
+      allow read: if true;
+      allow create, update: if signedIn() && id.size() == 16
+        && request.resource.data.keys().hasOnly(['last', 'seen', 'v', 'crew', 'people', 'days', 'style', 'len', 'goals', 'exp', 'home', 'tailored'])
+        && request.resource.data.seen.size() <= 800;
+    }
+
+    // Feedback and feature requests. The sender and the admin can read them; only the admin can answer or delete.
+    match /feedback/{id} {
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid
+        && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 3000
+        && request.resource.data.status == 'new' && !('reply' in request.resource.data);
+      allow read: if admin() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow update, delete: if admin();
     }
 
     match /crews/{crewId} {
