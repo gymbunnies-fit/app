@@ -903,3 +903,10 @@ body.a11y-big-text .crew-week .cw-name{position:absolute;width:1px;height:1px;ov
 body.a11y-big-text .crew-week :is(th,td){padding:4px 2px;font-size:.8rem}
 body.a11y-big-text .crew-week th[scope=row] .av{margin:0}
 body.a11y-big-text .day-tiles .today-dot{position:static;font-size:.7rem}
+/* The page never slides sideways: anything too wide is clipped instead of making the screen wobble */
+body.shell #main{overflow-x:hidden;touch-action:pan-y pinch-zoom}
+body.shell #main .scroll{touch-action:pan-x pan-y pinch-zoom}
+/* Logged exercises: the Added / Library / Alternative tag drops under the name instead of running off the card */
+body.a11y-big-text .done-card .head .name{display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:10px;row-gap:6px;align-items:center}
+body.a11y-big-text .done-card .head .name .tag{grid-column:2;justify-self:start;margin:0;max-width:100%}
+body.a11y-big-text .tick{width:1.75em;height:1.75em;flex:none;margin-right:0}
