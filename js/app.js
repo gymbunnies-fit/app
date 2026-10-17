@@ -15,7 +15,7 @@ import { connect, save, remove, patch, dropField, signOutAndClear, importAll, CO
 
 // ---------------------------------------------------------------- helpers
 // Shown at the bottom of Settings so you can tell whether a phone has the latest update. Bump with sw.js VERSION.
-const APP_VERSION = "35";
+const APP_VERSION = "36";
 // The app's name lives here only (plus manifest.webmanifest and the <title> tags in index.html, which can't read JS).
 const APP_NAME = "GymBunnies.fit";
 const $ = (s, r = document) => r.querySelector(s);
@@ -279,7 +279,19 @@ function relabel() {
   relabeling = true;
   // A record holding exercises from two plan days (from the early date-only version) is split so each day gets its own.
   // Only the original plan's days are relabeled; built plans and home workouts reuse exercises across days.
-  const legacySlot = s => DAYS.includes(s.day) && !PG.usesProgram(P(s.user));
+  // Only records from before the slot-based version (Oct 8, 2026) are ever fixed up. Anything newer is left exactly as
+  // logged, so an exercise added from another day's plan (say, Week B's adductor on a Week A day) stays where it was done.
+  const CUTOFF = "2026-10-08";
+  const legacySlot = s => s.date < CUTOFF && DAYS.includes(s.day) && !PG.usesProgram(P(s.user));
+  // Undo the earlier mistake: put exercises that were split out of a newer workout back where they were logged.
+  for (const s of [...state.data.sessions]) {
+    if (!s.splitFrom || s.date < CUTOFF) continue;
+    const home = state.data.sessions.find(x => x.id === s.splitFrom);
+    if (!home) continue;
+    const ex = Object.fromEntries((s.exercises || []).filter(e => e.sets?.length).map(e => [e.id, e]));
+    if (Object.keys(ex).length) patch("sessions", home.id, { ex });
+    remove("sessions", s.id);
+  }
   for (const s of [...state.data.sessions]) {
     if (s.moved || !legacySlot(s)) continue;
     const bySlot = {};
@@ -1014,8 +1026,7 @@ function celebrate(kind, text, spoken = null) {
 const gymSet = () => state.data.settings.find(x => x.id === "gym") || {};
 function stepFor(db, kind, w, dir) {
   if (kind === "assist") return 5;
-  if (db) { const up = +gymSet().dbSmallUpTo || 25, small = +gymSet().dbSmallStep || 2.5; return (dir > 0 ? w < up : w <= up) ? small : 5; }
-  return +gymSet().machineStep || 5;
+  return 2.5; // every weight moves in 2.5 lb steps (hold the button to keep going)
 }
 const roundTo = (w, step) => Math.max(0, Math.round(w / step) * step);
 const deloadOf = u => state.data.settings.find(x => x.id === `deload_${u}`) || null;
@@ -1969,13 +1980,31 @@ function setValue(c, f, val, typingIn) {
 }
 
 // ---------------------------------------------------------------- events
+// Only the content area scrolls (the header and tab bar are fixed in the layout), so "back to top" scrolls it.
+function toTop() { $("#main")?.scrollTo(0, 0); window.scrollTo(0, 0); }
 function go(view) {
   if (view === "report") { view = "progress"; state.progTab = "report"; }
-  state.view = view; state.confirmDel = null; store.set("twp-view", view); render(); scrollTo(0, 0);
+  state.view = view; state.confirmDel = null; store.set("twp-view", view); render(); toTop();
   const h = $("#main h2, #main h1, #main h3"); if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }); }
   A.announce(`${VIEW_NAMES[view]} tab`);
 }
 
+// − / + on a set: one tap = one step. Press and hold to keep going.
+function stepOnce(el) {
+  const c = cardFor(el); if (!c || c.si == null) return; const f = el.dataset.f; const old = +c.d.sets[c.si][f] || 0; const dir = Math.sign(+el.dataset.by);
+  const def = defOf(c.ex, c.d.variant); const by = f === "w" ? stepFor(def.db, def.kind, old, dir) * dir : +el.dataset.by;
+  setValue(c, f, Math.max(0, +(old + by).toFixed(2)));
+}
+let holdT = null, holdI = null, holdFired = false;
+const holdStop = () => { clearTimeout(holdT); clearInterval(holdI); holdT = holdI = null; };
+document.addEventListener("pointerdown", e => {
+  const el = e.target.closest('[data-act="step"]'); if (!el) return;
+  holdStop(); holdFired = false;
+  holdT = setTimeout(() => { holdFired = true; stepOnce(el); holdI = setInterval(() => (el.isConnected ? stepOnce(el) : holdStop()), 110); }, 380);
+});
+for (const t of ["pointerup", "pointercancel", "blur"]) window.addEventListener(t, holdStop, true);
+document.addEventListener("visibilitychange", holdStop);
+document.addEventListener("contextmenu", e => { if (e.target.closest?.('[data-act="step"]')) e.preventDefault(); });
 document.addEventListener("click", e => {
   const el = e.target.closest("[data-act]"); if (!el) return;
   const act = el.dataset.act; const v = el.dataset.v;
@@ -1991,20 +2020,20 @@ document.addEventListener("click", e => {
     case "obNone": state.ob.a[el.dataset.k] = []; drawOnboarding(); break;
     case "obFinish": finishOnboarding(); break;
     case "strMin": strState().minutes = +v; store.set("twp-str-min", +v); render(); break;
-    case "strPick": { const st = strState(); st.pick = v; if (v === "area" && !st.areas.length) st.areas = ["hips", "lowerBack"]; render(); scrollTo(0, 0); $("#sp-h")?.focus(); break; }
-    case "strBack": strState().pick = null; render(); scrollTo(0, 0); break;
+    case "strPick": { const st = strState(); st.pick = v; if (v === "area" && !st.areas.length) st.areas = ["hips", "lowerBack"]; render(); toTop(); $("#sp-h")?.focus(); break; }
+    case "strBack": strState().pick = null; render(); toTop(); break;
     case "strArea": { const a = strState().areas, i = a.indexOf(v); i >= 0 ? a.splice(i, 1) : a.push(v); render(); $(`[data-act=strArea][data-v="${v}"]`)?.focus(); break; }
     case "strStart": {
       const r = strRoutine(state.user); if (!r.items.length) break;
       F.unlockAudio?.(); strState().finished = null;
       strState().run = { title: r.title, steps: ST.steps(r.items), i: 0, count: r.items.length };
-      scrollTo(0, 0); strGo(); $("#sr-h")?.focus(); break;
+      toTop(); strGo(); $("#sr-h")?.focus(); break;
     }
     case "strNext": { const run = strState().run; if (!run) break; T.stop("stretch"); run.i++; if (run.i >= run.steps.length) strFinish(); else strGo(); break; }
     case "strPrev": { const run = strState().run; if (!run || !run.i) break; T.stop("stretch"); run.i--; strGo(); break; }
     case "strEnd": strFinish(true); break;
     case "strFeel": { const f = strState().finished; if (f) { f.feel = v; patch("activities", f.id, { feel: v }); render(); } break; }
-    case "strHome": strState().finished = null; strState().pick = null; render(); scrollTo(0, 0); break;
+    case "strHome": strState().finished = null; strState().pick = null; render(); toTop(); break;
     case "libDone": go("today"); break;
     case "openLib": closeOverlay(); go("gym"); break;
     case "homeToggle": {
@@ -2018,7 +2047,7 @@ document.addEventListener("click", e => {
       state.bonusPick = { u: LU(), ...state.bonusDraft }; state.bonusPicker = false;
       state.sel = { week: S.cycleInfo(TODAY(), cycleStart()).week, day: "Bonus" }; state.userTouchedSel = true; state.logDate = null;
       const cur = sessionFor(LU(), TODAY()); if (cur) patch("sessions", cur.id, { bonusFocus: state.bonusPick.focus, bonusWhere: state.bonusPick.where });
-      render(); scrollTo(0, 0); toast(`Bonus day: ${PG.BONUS_FOCUS[state.bonusPick.focus][0]}, ${state.bonusPick.where === "home" ? "at home" : "at the gym"}.`); break;
+      render(); toTop(); toast(`Bonus day: ${PG.BONUS_FOCUS[state.bonusPick.focus][0]}, ${state.bonusPick.where === "home" ? "at home" : "at the gym"}.`); break;
     }
     case "bonusLog": save("activities", `${LU()}-${TODAY()}-bonus`, { user: LU(), date: TODAY(), type: "Bonus session" }); toast("Bonus session logged. Superhuman."); render(); break;
     case "tailorOff": saveProfile(state.user, { tailorList: [] }); toast("Back to the standard plan. Retake the questionnaire any time."); openSettings(); break;
@@ -2105,16 +2134,12 @@ document.addEventListener("click", e => {
       putDraft(c.u, c.date, c.id, { variant: v, ...p }); render(); break;
     }
     case "timer": { const c = cardFor(el); openTimer(c ? c.id : el.dataset.ex); break; }
-    case "step": {
-      const c = cardFor(el); const f = el.dataset.f; const old = +c.d.sets[c.si][f] || 0; const dir = Math.sign(+el.dataset.by);
-      const def = defOf(c.ex, c.d.variant); const by = f === "w" ? stepFor(def.db, def.kind, old, dir) * dir : +el.dataset.by;
-      setValue(c, f, Math.max(0, +(old + by).toFixed(2))); break;
-    }
+    case "step": if (holdFired) { holdFired = false; break; } stepOnce(el); break;
     case "diff": {
       const c = cardFor(el); c.d.sets[c.si].d = +el.dataset.d; c.d.fresh = false; putDraft(c.u, c.date, c.id, c.d);
       el.parentElement.querySelectorAll("[data-d]").forEach(b => b.setAttribute("aria-pressed", b === el)); c.card.querySelector(".fresh-note")?.remove(); break;
     }
-    case "focusGo": { const n = +el.dataset.n; if (n >= 0 && n < (state.focusCount || 99)) { state.focusStep = n; render(); scrollTo(0, 0); const h = $("#main .focus-head + * .name, #main .focus-head + * summary, #main .focus-head + * h3"); h?.setAttribute("tabindex", "-1"); h?.focus({ preventScroll: true }); A.announce(`Step ${n + 1}`); } break; }
+    case "focusGo": { const n = +el.dataset.n; if (n >= 0 && n < (state.focusCount || 99)) { state.focusStep = n; render(); toTop(); const h = $("#main .focus-head + * .name, #main .focus-head + * summary, #main .focus-head + * h3"); h?.setAttribute("tabindex", "-1"); h?.focus({ preventScroll: true }); A.announce(`Step ${n + 1}`); } break; }
     case "focusAll": state.focusAll = true; render(); break;
     case "markDone": writeSession(LU(), slotDate(state.sel.week, state.sel.day), { markedDone: true }); toast(`Week ${state.sel.week} ${dayName(state.sel.day)} marked done.`); render(); break;
     case "unmarkDone": { const s = sessionFor(LU(), LD()); if (s) patch("sessions", s.id, { markedDone: false }); render(); break; }
@@ -2309,7 +2334,8 @@ document.addEventListener("focusout", () => {
   clearTimeout(kbT);
   kbT = setTimeout(() => { if (isTyping(document.activeElement)) return; document.body.classList.remove("kb-open"); repin(); }, 120);
 });
-function repin() { const y = window.scrollY; window.scrollTo(window.scrollX, y + 1); requestAnimationFrame(() => window.scrollTo(window.scrollX, y)); }
+// The page itself never scrolls (only the middle does), so after the keyboard closes, snap it back to the top.
+function repin() { window.scrollTo(0, 0); requestAnimationFrame(() => window.scrollTo(0, 0)); }
 window.visualViewport?.addEventListener("resize", () => { if (!isTyping(document.activeElement)) { document.body.classList.remove("kb-open"); repin(); } });
 document.getElementById("tabs").addEventListener("click", e => { const b = e.target.closest("button[data-view]"); if (b) go(b.dataset.view); });
 document.getElementById("who").addEventListener("click", openSettings);

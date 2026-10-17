@@ -855,3 +855,16 @@ body.a11y-big-text .routines,body.a11y-huge-text .routines{grid-template-columns
 .str-side{margin:0;color:var(--accent-text)}
 .str-done{display:grid;gap:14px}
 [data-act=strBack] .ico-chevron,[data-act=libDone] .ico-chevron{transform:rotate(90deg)}
+/* No double-tap zoom on buttons and fields (pinch zoom still works). Steppers can be held down. */
+button,a,input,select,label,summary,[role="button"]{touch-action:manipulation}
+.stepper button{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+/* App shell: header and tab bar sit in the layout, and only the middle scrolls. Nothing is position:fixed,
+   so iPhone's keyboard and toolbars can't leave the tab bar stranded mid-screen. */
+html{height:100%}
+html:has(body.shell){overflow:hidden;overscroll-behavior:none}
+body.shell{position:fixed;inset:0;height:auto;overflow:hidden;display:flex;flex-direction:column;padding-bottom:0;overscroll-behavior:none}
+body.shell .top{position:relative;flex:none}
+body.shell #main{flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain;padding-bottom:20px}
+body.shell nav.tabs{position:relative;flex:none;left:auto;right:auto;bottom:auto}
+body.shell .sticky-cta{bottom:8px}
+body.shell.kb-open{padding-bottom:0}
