@@ -16,7 +16,7 @@ import { connect, save, remove, patch, dropField, signOutAndClear, importAll, CO
 
 // ---------------------------------------------------------------- helpers
 // Shown at the bottom of Settings so you can tell whether a phone has the latest update. Bump with sw.js VERSION.
-const APP_VERSION = "46";
+const APP_VERSION = "47";
 // The app's name lives here only (plus app-v41.webmanifest and the <title> tags in index.html, which can't read JS).
 const APP_NAME = "GymBunnies.fit";
 const $ = (s, r = document) => r.querySelector(s);
@@ -403,7 +403,7 @@ function track(fields) { if (state.auth?.user && state.auth.crewId) bump(TODAY()
 let seenBusy = false, seenTried = 0;
 async function trackSeen() {
   const uid = state.auth?.user?.uid; if (!uid || !state.auth.crewId || !state.user || !state.flags.profiles || seenBusy) return;
-  const key = `gb-seen-${uid}`, today = TODAY(); if (store.get(key, "") === today) return;
+  const key = `gb-seen2-${uid}`, today = TODAY(); if (store.get(key, "") === today) return;
   if (Date.now() - seenTried < 60000) return; // a refused write is retried at most once a minute
   seenTried = Date.now();
   seenBusy = true;
