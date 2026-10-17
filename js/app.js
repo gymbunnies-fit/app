@@ -16,8 +16,8 @@ import { connect, save, remove, patch, dropField, signOutAndClear, importAll, CO
 
 // ---------------------------------------------------------------- helpers
 // Shown at the bottom of Settings so you can tell whether a phone has the latest update. Bump with sw.js VERSION.
-const APP_VERSION = "41";
-// The app's name lives here only (plus manifest.webmanifest and the <title> tags in index.html, which can't read JS).
+const APP_VERSION = "42";
+// The app's name lives here only (plus app-v41.webmanifest and the <title> tags in index.html, which can't read JS).
 const APP_NAME = "GymBunnies.fit";
 const $ = (s, r = document) => r.querySelector(s);
 // "a", "a and b", "a, b, and c" (Oxford comma)
@@ -2625,7 +2625,7 @@ if ("serviceWorker" in navigator) {
 // ---------------------------------------------------------------- updates
 // Every time the app opens (or comes back to the front), ask the server which version is live.
 // If it's newer than this copy, throw the old copy away and reload. No buttons needed.
-const SHELL_FILES = ["./", "index.html", "css/styles.css", "js/app.js", "js/plan.js", "js/stats.js", "js/firebase.js", "js/library.js", "js/fun.js", "js/safety.js", "js/timer.js", "js/a11y.js", "js/icons.js", "js/tailor.js", "js/program.js", "js/stretch.js", "manifest.webmanifest", "sw.js"];
+const SHELL_FILES = ["./", "index.html", "css/styles.css", "js/app.js", "js/plan.js", "js/stats.js", "js/firebase.js", "js/library.js", "js/fun.js", "js/safety.js", "js/timer.js", "js/a11y.js", "js/icons.js", "js/tailor.js", "js/program.js", "js/stretch.js", "app-v41.webmanifest", "sw.js"];
 async function liveVersion() {
   try { const r = await fetch(`sw.js?check=${Date.now()}`, { cache: "no-store" }); const m = /VERSION = "twp-v(\d+)"/.exec(await r.text()); return m ? m[1] : null; } catch { return null; }
 }
