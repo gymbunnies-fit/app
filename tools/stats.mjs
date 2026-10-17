@@ -33,7 +33,9 @@ const now = new Date(Date.now() - 4 * 3600e3); // Eastern-ish, so "today" matche
 const today = ymd(now);
 const back = n => ymd(new Date(now.getTime() - n * 864e5));
 
-const [daily, usage] = await Promise.all([all("daily"), all("usage")]);
+let daily, usage;
+try { [daily, usage] = await Promise.all([all("daily"), all("usage")]); }
+catch (e) { console.log(`::error::Reading Firestore failed: ${String(e.message).slice(0, 400).replace(/\n/g, " ")}`); process.exit(1); }
 const COUNTERS = ["workouts", "home", "bonus", "exercises", "sets", "stretches", "onboarded", "feedback", "shares"];
 const START = "2026-10-16"; // tracking began with v37
 const days = [];
