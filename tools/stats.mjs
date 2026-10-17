@@ -1,6 +1,8 @@
 // Builds stats.json from the anonymous counters in Firestore (daily/*, usage/*), which anyone can read.
 // Run by .github/workflows/stats.yml; the result is committed to the "stats" branch for the dashboard.
 import { writeFileSync } from "node:fs";
+import { GOALS, EXPERIENCE, SESSION_LEN } from "../js/tailor.js";
+import { STYLES } from "../js/program.js";
 const KEY = "AIzaSyC1RgJvqEyg8-HvVvNmQrSQkUnpPIkIG5k";
 const BASE = "https://firestore.googleapis.com/v1/projects/gymbunnies-fit/databases/(default)/documents";
 
@@ -33,9 +35,10 @@ const back = n => ymd(new Date(now.getTime() - n * 864e5));
 
 const [daily, usage] = await Promise.all([all("daily"), all("usage")]);
 const COUNTERS = ["workouts", "home", "bonus", "exercises", "sets", "stretches", "onboarded", "feedback", "shares"];
+const START = "2026-10-16"; // tracking began with v37
 const days = [];
 for (let i = 89; i >= 0; i--) {
-  const date = back(i); const d = daily.find(x => x.id === date) || {};
+  const date = back(i); if (date < START) continue; const d = daily.find(x => x.id === date) || {};
   const active = usage.filter(u => (u.seen || []).includes(date)).length;
   const newAcc = usage.filter(u => (u.seen || []).length && [...u.seen].sort()[0] === date).length;
   days.push({ date, active, new: newAcc, ...Object.fromEntries(COUNTERS.map(k => [k, d[k] || 0])) });
@@ -55,4 +58,12 @@ const out = {
   }
 };
 writeFileSync("stats.json", JSON.stringify(out, null, 1));
+// The same numbers as row tables, for the dashboard.
+const { days: _d, plans: _p, totals: _t, ...head } = out;
+writeFileSync("summary.json", JSON.stringify([{ ...head, ...Object.fromEntries(Object.entries(totals).map(([k, n]) => [`total_${k}`, n])) }]));
+writeFileSync("daily.json", JSON.stringify(days));
+const QUESTION = { daysPerWeek: "Days a week", style: "Plan layout", sessionLen: "Session length", goals: "Goals", experience: "Experience", homeGear: "Has home gear", tailored: "Plan adjusted for them", version: "App version" };
+const LABEL = { goals: k => GOALS[k], experience: k => EXPERIENCE[k]?.[0], style: k => STYLES[k]?.[0], sessionLen: k => SESSION_LEN[k],
+  daysPerWeek: k => `${k} day${k === "1" ? "" : "s"}`, homeGear: k => (k === "yes" ? "Yes" : "No"), tailored: k => (k === "yes" ? "Yes" : "No"), version: k => `v${k}` };
+writeFileSync("plans.json", JSON.stringify(Object.entries(out.plans).flatMap(([q, m]) => Object.entries(m).map(([k, people]) => ({ question: QUESTION[q] || q, answer: LABEL[q]?.(String(k)) || String(k), people })))));
 console.log(`accounts ${out.accounts}, active7 ${out.active7}, workouts ${totals.workouts}`);

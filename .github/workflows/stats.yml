@@ -17,11 +17,11 @@ jobs:
       - run: node tools/stats.mjs
       - name: Save to the stats branch
         run: |
-          mkdir out && mv stats.json out/
+          mkdir out && mv stats.json summary.json daily.json plans.json out/
           cd out
           git init -q -b stats
           git config user.name "gymbunnies-stats"
           git config user.email "stats@gymbunnies.fit"
-          git add stats.json
+          git add .
           git commit -qm "Usage stats $(date -u +%FT%TZ)"
           git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" stats
