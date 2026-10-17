@@ -1,7 +1,7 @@
 // Offline support: the app shell is cached so it opens with no signal.
 // Workout data is handled separately by Firestore's own offline cache.
 // Bump VERSION whenever you change files, so phones pick up the update.
-const VERSION = "twp-v39";
+const VERSION = "twp-v40";
 const SHELL = [
   "./", "index.html", "css/styles.css",
   "js/app.js", "js/plan.js", "js/stats.js", "js/firebase.js", "js/library.js", "js/fun.js", "js/safety.js", "js/timer.js", "js/a11y.js", "js/icons.js", "js/tailor.js", "js/program.js", "js/stretch.js",
@@ -27,7 +27,7 @@ self.addEventListener("fetch", e => {
   if (url.hostname === "www.gstatic.com" && !url.pathname.startsWith("/firebasejs/")) return;
   // Version checks and forced updates always go to the server.
   // Icons and the manifest always come straight from the server, so the phone's "Add to Home Screen" never gets a stale or failed copy.
-  if (sameOrigin && /(^|\/)(icons\/|apple-touch-icon|favicon|manifest\.webmanifest)/.test(url.pathname)) return;
+  if (sameOrigin && /(apple-touch-icon|bunny-touch|icon-192|icon-512|favicon\.ico|manifest\.webmanifest)/.test(url.pathname)) return;
   if (sameOrigin && (url.searchParams.has("check") || url.pathname.endsWith("/sw.js") || req.cache === "reload" || req.cache === "no-store")) return;
   e.respondWith(caches.open(VERSION).then(async cache => {
     const cached = await cache.match(req, { ignoreSearch: sameOrigin });
