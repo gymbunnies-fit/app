@@ -16,7 +16,7 @@ import { connect, save, remove, patch, dropField, signOutAndClear, importAll, CO
 
 // ---------------------------------------------------------------- helpers
 // Shown at the bottom of Settings so you can tell whether a phone has the latest update. Bump with sw.js VERSION.
-const APP_VERSION = "51";
+const APP_VERSION = "52";
 // The app's name lives here only (plus app-v41.webmanifest and the <title> tags in index.html, which can't read JS).
 const APP_NAME = "GymBunnies.fit";
 const $ = (s, r = document) => r.querySelector(s);
@@ -1674,7 +1674,7 @@ function delAcctCard() {
     : owner ? `You own ${esc(a.crew?.name || "this crew")}. It will pass to ${esc(others[0].name || "the longest-standing member")}, and everyone else keeps their own data.`
     : `Everyone else in ${esc(a.crew?.name || "the crew")} keeps their own data.`;
   return `<section class="card del-acct" aria-labelledby="da-h"><h3 class="h3" id="da-h">Delete my account</h3>
-    <p class="small">Permanently erases your workouts, body measurements, check-ins, profile and feedback, takes you out of the crew, and deletes your sign-in. This can't be undone.</p>
+    <p class="small">Permanently erases your workouts, body measurements, check-ins, profile and feedback, takes you out of the crew, and deletes your sign-in. This can't be undone. <a href="privacy.html">Privacy page</a></p>
     <p class="small">${crewLine}</p>
     ${!d.step ? `<button class="btn danger small" data-act="delAcct">Delete my account…</button>` : `
       <p class="small"><b>Are you sure?</b> ${pwOnly ? "Enter your password to confirm." : "Google will ask you to confirm it's you."}</p>
@@ -2806,6 +2806,7 @@ function viewSignIn() {
     </form>
     <details class="more" style="text-align:left"><summary>Forgot which email you used?</summary><div class="panel small">
       <p>Try Continue with Google first. If that's not it, ask someone in your crew: Settings → Crew lists everyone's sign-in email.</p></div></details>
+    <p class="small muted signin-legal">No ads, and we never sell your data. <a href="privacy.html">Privacy</a></p>
   </section>`;
 }
 function logoHtml(size = "") {

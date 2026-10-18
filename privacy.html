@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Privacy · GymBunnies.fit</title>
+<meta name="description" content="What GymBunnies.fit stores, who can see it, and how to delete it.">
+<meta name="theme-color" content="#201f1d">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,600;1,700&family=Hanken+Grotesk:wght@400;600;700&display=swap" media="print" onload="this.media='all'">
+<style>
+:root { --bg: #F3F2F2; --surface: #ffffff; --ink: #201F1D; --muted: #57514e; --line: #d9d4d3; --accent: #b00575;
+  --display: "Cormorant Garamond", Georgia, serif; --body: "Hanken Grotesk", system-ui, -apple-system, sans-serif; color-scheme: light; }
+@media (prefers-color-scheme: dark) { :root { --bg: #201F1D; --surface: #2a2826; --ink: #F3F2F2; --muted: #c2bbb7; --line: #3d3a37; --accent: #ff6cc4; color-scheme: dark; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.6 var(--body); }
+main { max-width: 680px; margin: 0 auto; padding: 32px max(18px, env(safe-area-inset-right)) 64px max(18px, env(safe-area-inset-left)); }
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+.top img { height: 34px; width: auto; }
+.logo-dark { display: none; }
+@media (prefers-color-scheme: dark) { .logo-light { display: none; } .logo-dark { display: inline; } }
+a { color: var(--accent); }
+.back { font-weight: 600; text-decoration: none; border: 1px solid var(--line); border-radius: 999px; padding: 8px 16px; color: var(--ink); }
+.back:focus-visible, a:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+h1 { font: italic 700 clamp(40px, 9vw, 56px)/1 var(--display); margin: 8px 0 6px; text-wrap: balance; }
+.updated { color: var(--muted); margin: 0 0 24px; }
+h2 { font: 700 20px/1.3 var(--body); margin: 32px 0 8px; }
+p, li { max-width: 65ch; }
+ul { padding-left: 1.2em; }
+li { margin: 6px 0; }
+.short { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 6px 20px; }
+.short ul { padding-left: 1.1em; }
+.note { color: var(--muted); font-size: 15px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <a href="./" aria-label="GymBunnies.fit home"><img class="logo-light" src="icons/logo-oneline-light.svg" alt="GymBunnies.fit" width="150" height="38"><img class="logo-dark" src="icons/logo-oneline-dark.svg" alt="GymBunnies.fit" width="150" height="38"></a>
+    <a class="back" href="./">Back to the app</a>
+  </div>
+
+  <h1>Privacy</h1>
+  <p class="updated">Last updated October 18, 2026</p>
+
+  <section class="short" aria-labelledby="short-h">
+    <h2 id="short-h">The short version</h2>
+    <ul>
+      <li>We store what you put into the app so it can plan and track your workouts, and so your crew can train with you.</li>
+      <li>No ads. We don't sell your data or share it with advertisers, and we don't track you on other websites.</li>
+      <li>We count how the app gets used, anonymously: no names, emails or workout details.</li>
+      <li>You can delete your account and your data any time: Settings → Delete my account.</li>
+    </ul>
+  </section>
+
+  <h2>What we store</h2>
+  <ul>
+    <li><b>Your sign-in:</b> your name and email from Google or the email you sign up with. Passwords are handled by Google's sign-in service; we never see them.</li>
+    <li><b>Your plan answers:</b> goals, experience, how many days you train, session length, home gear, and any injuries or limits you choose to tell us about, so the plan can work around them.</li>
+    <li><b>Your training:</b> workouts, exercises, weights, reps, how each set felt, cardio, stretches, check-ins (including pain ratings if you add them) and notes.</li>
+    <li><b>Body measurements</b> you choose to log, such as weight or waist.</li>
+    <li><b>Your crew:</b> which crew you're in, its name and invite code.</li>
+    <li><b>Feedback you send,</b> with your name, so we can follow up.</li>
+  </ul>
+
+  <h2>Who can see it</h2>
+  <ul>
+    <li><b>You,</b> on any phone you sign in on.</li>
+    <li><b>Your crew.</b> A crew is a private group you join with an invite code. Everyone in it can access the crew's training records; that's how training together and partner logging work. The <b>What you share</b> setting on the Crew tab controls what the Crew tab shows the others: everything, just that you trained, or nothing. Only join crews with people you trust.</li>
+    <li><b>The people who run GymBunnies.fit</b> can technically access the database to keep the app working and fix problems. We don't look through anyone's data otherwise. Feedback you send is read by the app's admin.</li>
+  </ul>
+
+  <h2>Anonymous usage counts</h2>
+  <p>To see what's working, the app counts things like: which days it was opened, how many workouts and sets were logged, which screens and buttons get used, minutes with the app open, and a summary of plan choices (days a week, goals, experience, layout). Injuries and limits are not included.</p>
+  <p>These counts are tied to a scrambled, one-way code instead of your name or email, and never include what you lifted or wrote. The totals are readable by anyone who looks, because they contain nothing personal.</p>
+
+  <h2>Services we use</h2>
+  <ul>
+    <li><b>Google Firebase</b> stores your data and handles sign-in, on Google's servers.</li>
+    <li><b>GitHub Pages</b> hosts the app. Like any website host, GitHub may log basic visit information such as IP addresses.</li>
+    <li><b>Google Fonts</b> supplies some of the typefaces, so your browser fetches font files from Google.</li>
+    <li><b>YouTube</b> only if you tap a "See it done" link, which opens YouTube.</li>
+  </ul>
+  <p>We don't use advertising networks, third-party analytics or tracking pixels.</p>
+
+  <h2>On your phone</h2>
+  <p>The app keeps a copy of your crew's data on your phone so it works with spotty gym signal. Signing out erases that copy.</p>
+
+  <h2>Deleting your data</h2>
+  <p>Go to <b>Settings → Delete my account</b>. This permanently erases your workouts, body measurements, check-ins, profile and feedback, takes you out of your crew, and deletes your sign-in. If you own the crew, it passes to the member who's been in it longest; if you're the last one, the whole crew is deleted. The anonymous usage counts stay, since nothing in them points back to you.</p>
+  <p>Want a copy first? Use <b>Settings → Backup → Download backup</b>.</p>
+
+  <h2>Health information</h2>
+  <p>GymBunnies.fit is a training log and planner, not a medical service, and nothing in it is medical advice. If you have an injury or condition, check with a doctor or physical therapist before starting a new routine.</p>
+
+  <h2>Children</h2>
+  <p>GymBunnies.fit isn't meant for children under 13, and we don't knowingly collect their information.</p>
+
+  <h2>Changes and questions</h2>
+  <p>If this page changes, the date at the top will change too. Questions or requests? Send them from <b>Settings → Feedback and ideas</b> in the app.</p>
+
+  <p class="note"><a href="./">Back to GymBunnies.fit</a></p>
+</main>
+</body>
+</html>
