@@ -45,7 +45,8 @@ service cloud.firestore {
         && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 3000
         && request.resource.data.status == 'new' && !('reply' in request.resource.data);
       allow read: if admin() || (signedIn() && resource.data.uid == request.auth.uid);
-      allow update, delete: if admin();
+      allow update: if admin();
+      allow delete: if admin() || (signedIn() && resource.data.uid == request.auth.uid);
     }
 
     match /crews/{crewId} {
@@ -53,7 +54,13 @@ service cloud.firestore {
       // but nobody can hand ownership to someone else or delete the crew from the app.
       allow create: if signedIn() && request.resource.data.owner == request.auth.uid;
       allow read: if member(crewId);
-      allow update: if member(crewId) && request.resource.data.owner == resource.data.owner;
+      allow update: if member(crewId) && (request.resource.data.owner == resource.data.owner
+        // the owner can hand the crew to another member (when deleting their account)
+        || (crewOwner(crewId) && exists(/databases/$(database)/documents/crews/$(crewId)/members/$(request.resource.data.owner)))
+        // if the owner is gone, a remaining member can take over
+        || (request.resource.data.owner == request.auth.uid && !exists(/databases/$(database)/documents/crews/$(crewId)/members/$(resource.data.owner))));
+      // Only the owner can delete a crew (the app does this when the last member deletes their account).
+      allow delete: if crewOwner(crewId);
 
       match /members/{uid} {
         allow read: if member(crewId);

@@ -4,7 +4,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import {
   getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
   signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut, updateProfile,
-  linkWithPopup, linkWithCredential, EmailAuthProvider
+  linkWithPopup, linkWithCredential, EmailAuthProvider, reauthenticateWithPopup, reauthenticateWithCredential, deleteUser
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
@@ -121,6 +121,55 @@ export function markSeen(id, date, data) {
   return setDoc(doc(db, "usage", id), { ...data, last: date, seen: arrayUnion(date) }, { merge: true });
 }
 
+// ---------------------------------------------------------------- delete my account
+// Google asks for a fresh sign-in before an account can be deleted, so this runs first.
+export async function reauth(password) {
+  const u = auth.currentUser; if (!u) throw new Error("You're signed out. Sign in again first.");
+  try {
+    if (password != null) await reauthenticateWithCredential(u, EmailAuthProvider.credential(u.email, password));
+    else await reauthenticateWithPopup(u, google);
+  } catch (err) { throw new Error(explain(err)); }
+}
+// Erase this account: its person's data in the crew (or the whole crew if they're the last one), crew membership,
+// feedback, the user record, and finally the sign-in. A crew owner hands the crew to the longest-standing member.
+export async function deleteEverything(crewId, profileId) {
+  const u = auth.currentUser, uid = u.uid;
+  const wipe = async refs => { for (let i = 0; i < refs.length; i += 400) { const b = writeBatch(db); refs.slice(i, i + 400).forEach(r => b.delete(r)); await b.commit(); } };
+  if (crewId) {
+    const crewRef = doc(db, "crews", crewId);
+    const crew = (await getDoc(crewRef)).data() || {};
+    const members = (await getDocs(collection(db, "crews", crewId, "members"))).docs.map(d => ({ id: d.id, ...d.data() }));
+    const others = members.filter(m => m.id !== uid).sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
+    if (!others.length) {
+      // Last one out: the whole crew goes.
+      if (crew.owner && crew.owner !== uid) await updateDoc(crewRef, { owner: uid });
+      const refs = [];
+      for (const name of COLLECTIONS) (await getDocs(collection(db, "crews", crewId, name))).docs.forEach(d => refs.push(d.ref));
+      await wipe(refs);
+      if (crew.code) await deleteDoc(doc(db, "codes", crew.code)).catch(() => {});
+      await deleteDoc(crewRef);
+    } else {
+      const refs = [];
+      if (profileId) {
+        for (const name of ["sessions", "body", "activities"]) (await getDocs(query(collection(db, "crews", crewId, name), where("user", "==", profileId)))).docs.forEach(d => refs.push(d.ref));
+        refs.push(doc(db, "crews", crewId, "profiles", profileId), doc(db, "crews", crewId, "settings", `plan_${profileId}`), doc(db, "crews", crewId, "settings", `deload_${profileId}`));
+      }
+      await wipe(refs);
+      if (crew.owner === uid) {
+        await updateDoc(doc(db, "crews", crewId, "members", others[0].id), { role: "owner" });
+        await updateDoc(crewRef, { owner: others[0].id });
+      }
+    }
+    await deleteDoc(doc(db, "crews", crewId, "members", uid)).catch(() => {});
+  }
+  const fb = await getDocs(query(collection(db, "feedback"), where("uid", "==", uid))).catch(() => null);
+  if (fb) await wipe(fb.docs.map(d => d.ref));
+  await deleteDoc(doc(db, "users", uid)).catch(() => {});
+  try { await deleteUser(u); } catch (err) { throw new Error(explain(err)); }
+  crewId = null;
+  await terminate(db).catch(() => {}); await clearIndexedDbPersistence(db).catch(() => {});
+}
+
 // ---------------------------------------------------------------- feedback
 // feedback/{id}: written by the sender, readable by the sender and the admin, answered by the admin.
 export const sendFeedback = data => addDoc(collection(db, "feedback"), data);
@@ -189,6 +238,7 @@ function explain(err) {
   if (c.includes("unauthorized-domain")) return "This web address isn't approved for Google sign-in yet. Add it in Firebase → Authentication → Settings → Authorized domains.";
   if (c.includes("operation-not-allowed")) return "That sign-in method isn't turned on yet in Firebase → Authentication → Sign-in method.";
   if (c.includes("credential-already-in-use") || c.includes("provider-already-linked")) return "That sign-in is already connected to an account.";
+  if (c.includes("user-mismatch")) return "That's a different Google account from the one you're signed in with. Pick the same one.";
   if (c.includes("requires-recent-login")) return "For security, sign out and back in, then try again.";
   if (c.includes("too-many-requests")) return "Too many tries. Wait a few minutes and try again.";
   if (c.includes("permission-denied")) return "The database refused access. Check that the Firestore rules from the README are published.";

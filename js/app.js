@@ -12,11 +12,11 @@ import * as S from "./stats.js";
 import { BUILTIN, GYM, EQUIP, PATTERN, JOINTS, POSITION, LEVEL, PLAN_PATTERN, PLAN_MACHINES, STRETCH_BY_FOCUS, normalizeLib } from "./library.js";
 import { connect, save, remove, patch, dropField, signOutAndClear, importAll, COLLECTIONS, watchAuth, signInGoogle, signInEmail, createEmailAccount, resetPassword, addGoogle, addPassword, currentInfo,
   getUserDoc, setUserDoc, createCrew, joinCrew, watchCrew, updateMember, removeMember, renameCrew, newInviteCode, readLegacy,
-  bump, markSeen, markPerson, sendFeedback, watchFeedback, answerFeedback } from "./firebase.js";
+  bump, markSeen, markPerson, sendFeedback, reauth, deleteEverything, watchFeedback, answerFeedback } from "./firebase.js";
 
 // ---------------------------------------------------------------- helpers
 // Shown at the bottom of Settings so you can tell whether a phone has the latest update. Bump with sw.js VERSION.
-const APP_VERSION = "49";
+const APP_VERSION = "50";
 // The app's name lives here only (plus app-v41.webmanifest and the <title> tags in index.html, which can't read JS).
 const APP_NAME = "GymBunnies.fit";
 const $ = (s, r = document) => r.querySelector(s);
@@ -1664,6 +1664,47 @@ document.addEventListener("twp-timer-done", e => {
 });
 
 // ---------------------------------------------------------------- settings
+// ---------------------------------------------------------------- delete my account
+function delAcctCard() {
+  const a = state.auth, me = a.user, d = state.delAcct || {};
+  const others = (a.members || []).filter(m => m.uid !== me?.uid).sort((x, y) => (x.joinedAt || 0) - (y.joinedAt || 0));
+  const owner = a.crew?.owner === me?.uid;
+  const pwOnly = !(me?.providers || []).includes("google.com");
+  const crewLine = !others.length ? `You're the only one in ${esc(a.crew?.name || "this crew")}, so the crew and everything in it will be deleted too.`
+    : owner ? `You own ${esc(a.crew?.name || "this crew")}. It will pass to ${esc(others[0].name || "the longest-standing member")}, and everyone else keeps their own data.`
+    : `Everyone else in ${esc(a.crew?.name || "the crew")} keeps their own data.`;
+  return `<section class="card del-acct" aria-labelledby="da-h"><h3 class="h3" id="da-h">Delete my account</h3>
+    <p class="small">Permanently erases your workouts, body measurements, check-ins, profile and feedback, takes you out of the crew, and deletes your sign-in. This can't be undone.</p>
+    <p class="small">${crewLine}</p>
+    ${!d.step ? `<button class="btn danger small" data-act="delAcct">Delete my account…</button>` : `
+      <p class="small"><b>Are you sure?</b> ${pwOnly ? "Enter your password to confirm." : "Google will ask you to confirm it's you."}</p>
+      ${pwOnly ? `<label class="field">Password<input type="password" id="da-pw" autocomplete="current-password"></label>` : ""}
+      ${d.error ? `<p class="small" role="alert" style="color:var(--bad,#b3261e)">${esc(d.error)}</p>` : ""}
+      <div class="row"><button class="btn danger" data-act="delAcctGo" ${d.busy ? "disabled" : ""}>${d.busy ? "Deleting…" : "Delete everything permanently"}</button><button class="btn" data-act="delAcctCancel" ${d.busy ? "disabled" : ""}>Keep my account</button></div>`}
+  </section>`;
+}
+async function deleteMyAccount() {
+  const d = state.delAcct; if (!d || d.busy) return;
+  const me = state.auth.user, pwOnly = !(me?.providers || []).includes("google.com");
+  const pw = pwOnly ? ($("#da-pw")?.value || "") : null;
+  if (pwOnly && !pw) { d.error = "Enter your password first."; openSettings(); $("#da-pw")?.focus(); return; }
+  d.busy = true; d.error = ""; openSettings();
+  try {
+    await reauth(pw);
+    const crewId = state.auth.crewId, profileId = (state.auth.members || []).find(m => m.uid === me.uid)?.profileId || "";
+    const uid = me.uid;
+    stopAll();
+    await deleteEverything(crewId, profileId);
+    for (const k of Object.keys(localStorage)) if (k.includes(uid) || /^(twp-user|twp-view|twp-variants|gb-)/.test(k)) store.del(k);
+    try { sessionStorage.setItem("gb-deleted", "1"); } catch {}
+    location.reload();
+  } catch (e) {
+    d.busy = false; d.error = e.message || String(e);
+    if (state.overlay === "settings") openSettings(); else toast(d.error);
+  }
+}
+try { if (sessionStorage.getItem("gb-deleted")) { sessionStorage.removeItem("gb-deleted"); setTimeout(() => toast("Your account and everything in it has been deleted."), 800); } } catch {}
+
 function openSettings() {
   if (state.overlay !== "settings") ev("v_settings");
   state.overlay = "settings";
@@ -1714,6 +1755,7 @@ function openSettings() {
       <p class="small"><b>Android:</b> open it in Chrome, tap the ⋮ menu, then Install app.</p><p class="small muted">App version ${APP_VERSION}. If a fix isn't showing up, close the app completely (swipe it away) and open it again.</p></section>
     <section class="card"><h3 class="h3">Backup</h3>
       <div class="row"><button class="btn" data-act="export">Download backup</button><label class="btn">Restore backup<input type="file" accept="application/json" data-act="import" hidden></label></div></section>
+      ${delAcctCard()}
   </div></div>`;
 }
 
@@ -2313,6 +2355,9 @@ document.addEventListener("click", e => {
     case "resetAccent": saveProfile(state.user, { accent: "" }); setTimeout(() => { applyAppearance(); openSettings(); render(); }, 60); break;
     case "setText": setA11y({ textSize: v }); openSettings(); break;
     case "openA11y": openA11y(); break;
+    case "delAcct": state.delAcct = { step: 1 }; openSettings(); ($("#da-pw") || $("[data-act=delAcctGo]"))?.focus(); break;
+    case "delAcctCancel": state.delAcct = null; openSettings(); $("[data-act=delAcct]")?.focus(); break;
+    case "delAcctGo": deleteMyAccount(); break;
     case "fbOpen": openFeedback("send"); break;
     case "fbInbox": openFeedback("inbox"); break;
     case "fbBack": openSettings(); break;
