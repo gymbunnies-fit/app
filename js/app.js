@@ -16,7 +16,7 @@ import { connect, save, remove, patch, dropField, signOutAndClear, importAll, CO
 
 // ---------------------------------------------------------------- helpers
 // Shown at the bottom of Settings so you can tell whether a phone has the latest update. Bump with sw.js VERSION.
-const APP_VERSION = "50";
+const APP_VERSION = "51";
 // The app's name lives here only (plus app-v41.webmanifest and the <title> tags in index.html, which can't read JS).
 const APP_NAME = "GymBunnies.fit";
 const $ = (s, r = document) => r.querySelector(s);
@@ -134,8 +134,8 @@ function bonusPickFor(u, week) {
 function bonusPicker(u) {
   const d = state.bonusDraft || { focus: "full", where: "gym" };
   return `<section class="card bonus-picker" id="bonus-picker" aria-labelledby="bp-h"><h3 class="h3" id="bp-h" tabindex="-1">Where do you want to focus?</h3>
-    <div class="focus-chips ob-chips" role="radiogroup" aria-labelledby="bp-h">${Object.entries(PG.BONUS_FOCUS).map(([k, [l]]) => `<button type="button" role="radio" data-act="bonusSet" data-k="focus" data-v="${k}" aria-checked="${d.focus === k}" aria-pressed="${d.focus === k}">${esc(l)}</button>`).join("")}</div>
-    <div class="field"><span id="bp-w">Where are you working out?</span><div class="seg" role="radiogroup" aria-labelledby="bp-w">${[["gym", "At the gym"], ["home", "At home"]].map(([k, l]) => `<button type="button" role="radio" data-act="bonusSet" data-k="where" data-v="${k}" aria-checked="${d.where === k}" aria-pressed="${d.where === k}">${l}</button>`).join("")}</div></div>
+    <div class="focus-chips ob-chips" role="group" aria-labelledby="bp-h">${Object.entries(PG.BONUS_FOCUS).map(([k, [l]]) => `<button type="button" data-act="bonusSet" data-k="focus" data-v="${k}" aria-pressed="${d.focus === k}">${esc(l)}</button>`).join("")}</div>
+    <div class="field"><span id="bp-w">Where are you working out?</span><div class="seg" role="group" aria-labelledby="bp-w">${[["gym", "At the gym"], ["home", "At home"]].map(([k, l]) => `<button type="button" data-act="bonusSet" data-k="where" data-v="${k}" aria-pressed="${d.where === k}">${l}</button>`).join("")}</div></div>
     <button class="btn primary block" data-act="bonusGo">Build my bonus workout</button></section>`;
 }
 // ---------------------------------------------------------------- week review
@@ -242,8 +242,8 @@ function weekReview(u, week, rv) {
     bonus = `<section class="card bonus-tile" id="bonus-picker" aria-labelledby="bt-h"><h3 class="h3" id="bt-h" tabindex="-1">Bonus day</h3>
       ${todayBonus ? `<p>You did a bonus workout today. Nice work.</p><button class="btn block" data-act="reviewDay" data-v="Bonus">Open today's bonus workout</button>` : `
       <p><b>Suggested: ${esc(PG.BONUS_FOCUS[sug.key][0])}.</b> ${esc(sug.why)} Pick something else if you'd rather.</p>
-      <div class="focus-chips ob-chips" role="radiogroup" aria-labelledby="bt-h">${Object.entries(PG.BONUS_FOCUS).map(([k, [l]]) => `<button type="button" role="radio" data-act="bonusSet" data-k="focus" data-v="${k}" aria-checked="${d.focus === k}" aria-pressed="${d.focus === k}">${esc(l)}${k === sug.key ? " ★" : ""}</button>`).join("")}</div>
-      <div class="field"><span id="bt-w">Where?</span><div class="seg" role="radiogroup" aria-labelledby="bt-w">${[["gym", "At the gym"], ["home", "At home"]].map(([k, l]) => `<button type="button" role="radio" data-act="bonusSet" data-k="where" data-v="${k}" aria-checked="${d.where === k}" aria-pressed="${d.where === k}">${l}</button>`).join("")}</div></div>
+      <div class="focus-chips ob-chips" role="group" aria-labelledby="bt-h">${Object.entries(PG.BONUS_FOCUS).map(([k, [l]]) => `<button type="button" data-act="bonusSet" data-k="focus" data-v="${k}" aria-pressed="${d.focus === k}">${esc(l)}${k === sug.key ? " ★" : ""}</button>`).join("")}</div>
+      <div class="field"><span id="bt-w">Where?</span><div class="seg" role="group" aria-labelledby="bt-w">${[["gym", "At the gym"], ["home", "At home"]].map(([k, l]) => `<button type="button" data-act="bonusSet" data-k="where" data-v="${k}" aria-pressed="${d.where === k}">${l}</button>`).join("")}</div></div>
       <p class="small muted">${esc(len)} · ${left ? `${left} bonus day${left === 1 ? "" : "s"} left this week` : "You've used every day this week. Superhero."}</p>
       <button class="btn primary block" data-act="bonusGo">Start bonus day</button>`}
       <div class="row bonus-alt"><button class="btn small" data-act="reviewStretch">Or recover: 15-minute stretch</button>${bonusDates(u).includes(TODAY()) ? `<span class="small">Bonus cardio logged today.</span>` : `<button class="btn small" data-act="bonusLog">Just log some cardio</button>`}</div></section>`;
@@ -811,7 +811,7 @@ function exerciseCard(u, date, ex, added, s, idx = 0, count = 0, cardOpts = {}) 
     ${ex.notes?.[u] ? `<div class="note">${esc(ex.notes[u])}</div>` : ""}
     ${smith ? `<div class="small muted">${esc(smith)}</div>` : ""}
     ${last ? `<div class="last small muted">Last time was ${S.fmtDate(last.date)}.</div>` : ""}
-    ${state.partner ? `<div class="last">${PROFILES[pu].name}: ${pLast ? `<b>${esc(S.describeSets(pLast.kind, pLast.db, pLast.sets))}</b>` : "no history yet"}</div>` : ""}
+    ${state.partner ? `<div class="last">${esc(PROFILES[pu].name)}: ${pLast ? `<b>${esc(S.describeSets(pLast.kind, pLast.db, pLast.sets))}</b>` : "no history yet"}</div>` : ""}
     ${sug ? `<div class="pill ${sug.type}">${esc(sug.text)}</div>` : ""}
     ${d.fresh ? `<div class="pill hold fresh-note">First time: set the weight and reps you actually did.</div>` : ""}
     <div class="sets">${d.sets.map((x, i) => setRow(entry, x, i)).join("")}</div>
@@ -892,7 +892,7 @@ function cardioCard(u, date, s) {
     <label class="field cardio-pick">Machine<select data-cf="type">${machines.map(o => `<option value="${esc(o)}" ${o === pick ? "selected" : ""}>${esc(o)}${o === cp.type ? " (recommended)" : ""}</option>`).join("")}</select></label>
     <p>${esc(cp.text)}</p>
     ${pick !== cp.type ? `<p class="small cardio-swap"><b>On the ${esc(pick.toLowerCase())}:</b> ${esc(CARDIO_MACHINES[pick] || CARDIO_MACHINES.Other)} Same time${cp.hiit ? " and the same easy and hard rounds" : ""} as planned.</p>` : `<p class="small muted">Recommended for today. Pick a different machine above if it's taken or you'd rather.</p>`}
-    ${partner ? `<p class="small muted"><b>${PROFILES[other(u)].name}:</b> ${esc(partner.type)}. ${esc(partner.text)}</p>` : ""}
+    ${partner ? `<p class="small muted"><b>${esc(PROFILES[other(u)].name)}:</b> ${esc(partner.type)}. ${esc(partner.text)}</p>` : ""}
     <details class="more" ${state.editing.has(ek) ? "open" : ""}><summary>Log cardio</summary><div class="panel">
       <div class="grid2">
         <label class="field">Minutes<input type="number" inputmode="numeric" data-cf="minutes" value="${esc(c.minutes)}"></label>
@@ -1057,7 +1057,7 @@ function viewGym() {
   return `<div class="row"><button type="button" class="btn small" data-act="libDone">${icon("chevron", 16, { stroke: 2 })}<span>Back to your workout</span></button></div><section class="card">
     <div class="between"><h2 class="h2">Exercise library</h2>${personToggle()}</div>
     <p class="small muted">${all.length} exercises. ${esc(GYM.name)} dumbbells go to about ${GYM.maxDumbbell} lb. Swaps and "Add an exercise" pull from here.</p>
-    ${ap ? `<div class="banner">Adding to ${ap.who === "both" ? "both plans" : PROFILES[ap.who].name + "'s plan"}: tap <b>Add to plan</b> on any exercise. <button class="btn small" data-act="apCancel">Cancel</button></div>` : ""}
+    ${ap ? `<div class="banner">Adding to ${ap.who === "both" ? "both plans" : esc(PROFILES[ap.who].name) + "'s plan"}: tap <b>Add to plan</b> on any exercise. <button class="btn small" data-act="apCancel">Cancel</button></div>` : ""}
     <label class="field">Search<input type="text" id="lib-q" data-act="libQ" value="${esc(F.q)}" placeholder="Row, lunge, press…" autocomplete="off"></label>
     <div class="field"><span>Equipment</span>${chips("equip", [["all", `All ${all.length}`], ...Object.entries(EQUIP).filter(([k]) => equipCounts[k]).map(([k, l]) => [k, `${l} ${equipCounts[k]}`])])}</div>
     <div class="field"><span>Focus</span>${chips("focus", [["all", "All"], ...GROUPS.map(g => [g, FOCUS[g]])])}</div>
@@ -1068,7 +1068,7 @@ function viewGym() {
       ${sel("impact", "Impact", [["all", "Any"], ["0", "None only"], ["1", "Low or none"]])}
       ${sel("sort", "Sort by", [["name", "Name"], ["easy", "Easiest first"], ["hard", "Hardest first"], ["light", "Least effort"], ["heavy", "Most effort"], ["impact", "Lowest impact"]])}
     </div></div></details>
-    <div class="field"><span>${PROFILES[u].name}'s sore spots today</span><div class="focus-chips">${Object.entries(JOINTS).map(([k, l]) => `<button type="button" class="ache" data-act="ache" data-v="${k}" aria-pressed="${sore.includes(k)}">${esc(l)}</button>`).join("")}</div></div>
+    <div class="field"><span>${esc(PROFILES[u].name)}'s sore spots today</span><div class="focus-chips">${Object.entries(JOINTS).map(([k, l]) => `<button type="button" class="ache" data-act="ache" data-v="${k}" aria-pressed="${sore.includes(k)}">${esc(l)}</button>`).join("")}</div></div>
     ${sore.length ? `<label class="field">Exercises that load sore spots heavily<select data-act="libSel" data-k="hideSore"><option value="yes" ${F.hideSore === "yes" ? "selected" : ""}>Hide them</option><option value="no" ${F.hideSore !== "yes" ? "selected" : ""}>Show them with a warning</option></select></label>` : ""}
     <div class="between"><span class="small muted mono">Showing ${list.length}${hiddenBySore.length ? ` · ${hiddenBySore.length} hidden for sore spots` : ""}</span><button class="btn small" data-act="libNew">+ New exercise or machine</button></div>
   </section>
@@ -1175,7 +1175,7 @@ function saveAddPlan() {
   const a = state.addPlan; const id = `lib-${a.libId}`;
   const users = a.who === "both" ? [state.user, other(state.user)] : [a.who]; const weeks = a.week === "AB" ? ["A", "B"] : [a.week];
   editPlan(users, weeks, a.day, d => { if (!d.add.includes(id)) d.add.push(id); });
-  toast(`Added to ${a.who === "both" ? "both plans" : PROFILES[a.who].name + "'s plan"}: ${a.week === "AB" ? "Weeks A and B" : "Week " + a.week} ${dayName(a.day)}.`);
+  toast(`Added to ${a.who === "both" ? "both plans" : esc(PROFILES[a.who].name) + "'s plan"}: ${a.week === "AB" ? "Weeks A and B" : "Week " + a.week} ${dayName(a.day)}.`);
   state.addPlan = null; closeOverlay(); render();
 }
 
@@ -2042,7 +2042,7 @@ function viewBody() {
 }
 function bodyForm(u) {
   const fields = Object.entries(S.BODY_FIELDS);
-  return `<section class="card" id="body-form"><h3 class="h3">New entry for ${PROFILES[u].name}</h3>
+  return `<section class="card" id="body-form"><h3 class="h3">New entry for ${esc(PROFILES[u].name)}</h3>
     <label class="field">Date<input type="date" id="body-date" value="${TODAY()}"></label>
     <div class="grid2">${fields.map(([f, m]) => `<label class="field">${esc(m.label)}${m.unit ? ` (${m.unit})` : ""}<input type="number" inputmode="decimal" step="any" data-bf="${f}"></label>`).join("")}</div>
     <details class="more"><summary>How to measure</summary><div class="panel small">
@@ -2365,7 +2365,7 @@ document.addEventListener("click", e => {
     case "fbSend": {
       const text = ($("#fb-text")?.value || "").trim(); if (!text) { toast("Type your message first."); $("#fb-text")?.focus(); break; }
       const kind = state.fbDraft?.kind || "idea";
-      sendFeedback({ uid: state.auth.user.uid, name: P(state.user)?.name || state.auth.user.name || "", crew: state.auth.crew?.name || "", kind, text, status: "new", at: Date.now(), v: APP_VERSION })
+      sendFeedback({ uid: state.auth.user.uid, name: String(P(state.user)?.name || state.auth.user.name || "").slice(0, 80), crew: String(state.auth.crew?.name || "").slice(0, 120), kind, text, status: "new", at: Date.now(), v: APP_VERSION })
         .then(() => { track({ feedback: 1 }); state.fbDraft = { kind, text: "" }; toast("Sent. Thank you!"); drawFeedback(); }, e => toast(`Couldn't send: ${e.message}`));
       break; }
     case "fbStatus": answerFeedback(el.dataset.id, { status: v }).catch(e => toast(e.message)); break;
@@ -2406,7 +2406,7 @@ document.addEventListener("click", e => {
       state.confirmDel = null; const { week, day } = state.sel;
       editPlan([LU()], [week], day, d => { Object.assign(d, { add: [], remove: [], order: [], sr: {}, title: "" }); }); toast("Back to the original plan for this day."); break;
     }
-    case "planCopy": { const { week, day } = state.sel; const src = dayEdits(LU(), week, day); const to = other(LU()); editPlan([to], [week], day, d => { Object.assign(d, JSON.parse(JSON.stringify(src))); }); toast(`Copied to ${P(to).name}'s plan.`); break; }
+    case "planCopy": { const { week, day } = state.sel; const src = dayEdits(LU(), week, day); const to = other(LU()); editPlan([to], [week], day, d => { Object.assign(d, JSON.parse(JSON.stringify(src))); }); toast(`Copied to ${esc(P(to).name)}'s plan.`); break; }
     case "authGoogle": busy(() => signInGoogle()); break;
     case "authMode": state.auth.mode = state.auth.mode === "create" ? "signin" : "create"; state.auth.error = ""; render(); break;
     case "authReset": { const em = $("#au-email")?.value.trim(); if (!em) { state.auth.error = "Type your email above first, then tap Forgot password."; render(); break; }
@@ -2554,7 +2554,7 @@ document.addEventListener("click", e => {
     case "planRemove": {
       const c = cardFor(el); const { week, day } = state.sel;
       editPlan([c.u], [week], day, d => { if (c.id.startsWith("lib-") && d.add.includes(c.id)) d.add = d.add.filter(x => x !== c.id); else if (!d.remove.includes(c.id)) d.remove.push(c.id); });
-      toast(`Removed from ${PROFILES[c.u].name}'s plan.`); break;
+      toast(`Removed from ${esc(PROFILES[c.u].name)}'s plan.`); break;
     }
     case "planRestore": { const { week, day } = state.sel; editPlan([LU()], [week], day, d => { d.remove = d.remove.filter(x => x !== el.dataset.id); }); break; }
     case "planFromLib": state.addPlan = { who: LU(), week: state.sel.week, day: state.sel.day }; go("gym"); toast("Tap Add to plan on any exercise."); break;
@@ -2816,7 +2816,7 @@ function viewCrewSetup() {
   const a = state.auth;
   return `<section class="signin">
     <h2>Join your crew</h2>
-    <p class="muted">Signed in as ${esc(a.user.email)}. A crew is a private group of training partners who share a gym library and can see each other's progress.</p>
+    <p class="muted">Signed in as <span class="acct-email">${esc(a.user.email)}</span>. A crew is a private group of training partners who share a gym library and can see each other's progress.</p>
     ${a.error ? `<div class="banner" role="alert">${esc(a.error)}</div>` : ""}
     <section class="card" style="text-align:left"><h3 class="h3">Have an invite code?</h3>
       <label class="field">Invite code<input type="text" id="crew-code" autocapitalize="characters" maxlength="6" placeholder="ABC123" style="font-family:var(--mono);letter-spacing:.2em;text-transform:uppercase"></label>
@@ -2844,7 +2844,7 @@ function crewCard() {
 function accountCard() {
   const a = state.auth;
   return `<section class="card"><h3 class="h3">Account</h3>
-    <p class="small">Signed in as <b>${esc(a.user.email)}</b> with ${listText(a.user.providers.map(p => p === "google.com" ? "Google" : p === "password" ? "email + password" : p))}.</p>
+    <p class="small">Signed in as <b class="acct-email">${esc(a.user.email)}</b> with ${listText(a.user.providers.map(p => p === "google.com" ? "Google" : p === "password" ? "email + password" : p))}.</p>
     ${a.user.providers.includes("google.com") ? "" : `<button class="btn small" data-act="linkGoogle">Also sign in with Google</button>`}
     ${a.user.providers.includes("password") ? `<button class="btn small" data-act="authResetMe">Change password (sends an email)</button>` : `<div class="row" style="align-items:end"><label class="field" style="flex:1">Add a password<input type="password" id="link-pw" minlength="6" autocomplete="new-password"></label><button class="btn small" data-act="linkPassword">Add</button></div><p class="small muted">Then you can sign in with ${esc(a.user.email)} and this password if Google sign-in gives you trouble.</p>`}
     <button class="btn small danger" data-act="authSignOut">Sign out</button>

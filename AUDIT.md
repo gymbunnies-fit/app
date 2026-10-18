@@ -1,3 +1,26 @@
+# Audit — October 17, 2026 (v51)
+
+What was checked: accessibility (axe-core, WCAG 2.2 AA + best practice) on 13 screens × 7 themes × light/dark × normal, high-contrast, Biggest text and every option on; layout at 320, 390 and 768 px wide at normal, Huge and Biggest text; script injection through names, feedback and custom exercises; Firestore rules; copy; Lighthouse speed. Tests: `node tests/run.mjs` (2,134 checks) plus browser scripts.
+
+## Fixed
+
+| Area | Problem | Fix |
+|---|---|---|
+| Security | A person's name was put on the page without escaping in four places (library sore spots, Body "New entry for…", two partner-mode lines). A crew member could set a name that ran code on other members' phones. | Every name is escaped. Re-tested with injection payloads in names, feedback and custom exercises: nothing runs. |
+| Security rules | Feedback could carry extra fields and very long names. | Feedback must have exactly the expected fields; name and crew name are length-limited. |
+| Accessibility | Bonus focus chips mixed radio and toggle roles. | Plain toggle buttons in a labelled group. |
+| Accessibility | "New best" tag and a selected day tile's date were below 4.5:1 contrast on some dark themes. | Colors adjusted; 0 violations on every screen, theme and mode. |
+| Layout | Weight and reps fields were 13 px wide on 320 px phones. | Set rows stack on narrow phones. |
+| Layout | Long email addresses and the questionnaire's last button ran off screen at large text. | Emails wrap; questionnaire buttons share or stack. |
+| Speed | App code downloaded one file after another; fonts blocked first paint; logos carried ~8 KB each of embedded export data. | Code preloads in parallel, fonts load without blocking, logo metadata stripped. Lighthouse (mobile, compressed like GitHub Pages): Performance 98, Accessibility 100, SEO 100. |
+| Copy | Site and app descriptions still said "two-week plan". | Describe the tailored 1–7 day plan. |
+| Cleanup | A public icon test page was still deployed. | Removed. |
+
+## Known and accepted
+
+- Home-screen icon shows a letter on iOS 27.2 for every site (apple.com too): an iOS issue, waiting on an update.
+- Usage counts are public-readable by design; they hold no names, emails or workout details.
+
 # Audit — October 1, 2026
 
 What was checked, what was fixed, and what's left. Tests: `node tests/run.mjs` (671 checks).

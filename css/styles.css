@@ -940,3 +940,18 @@ body.a11y-big-text .rv-day svg{display:none}
 /* iOS Safari gives date fields a minimum width wider than a narrow card; keep them inside their box */
 input[type=date]{-webkit-appearance:none;appearance:none;display:block;box-sizing:border-box;width:100%;min-width:0;max-width:100%}
 input[type=date]::-webkit-date-and-time-value{text-align:left;min-height:1.4em}
+
+/* "New" tags: pink text mixed toward the page's ink so it clears 4.5:1 on every theme, light or dark */
+.tag.new{color:color-mix(in srgb,var(--plate) 62%,var(--ink))}
+.chips.day-tiles button[aria-pressed="true"] .today-dot{color:var(--ink)}
+body[data-skin="iron"] .chips.day-tiles button[aria-pressed="true"] :is(.d,.m,.today-dot){color:var(--on-accent)}
+/* Small phones (320–360 px wide): set rows stack so weight and reps fields have room for "22.5" */
+@media (max-width: 360px){
+  .set,.set.noweight{grid-template-columns:1fr 1fr!important;grid-template-areas:"n del" "w w" "r r" "diff diff" "chk chk"!important}
+  .set.noweight{grid-template-areas:"n del" "r r" "diff diff" "chk chk"!important}
+}
+/* Long email addresses wrap instead of running off the screen */
+.acct-email{overflow-wrap:anywhere!important;word-break:break-word}
+/* Questionnaire Back / Next buttons share the row, or stack when there isn't room */
+.ob-nav{flex-wrap:wrap}
+.ob-nav .btn{flex:1 1 120px;min-width:0}
