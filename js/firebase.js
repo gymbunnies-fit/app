@@ -218,16 +218,6 @@ export async function importAll(data) {
   return n;
 }
 
-// The first version stored everything at the top level of the database. Read it so it can be copied into a crew.
-export async function readLegacy() {
-  const out = {}; let n = 0;
-  for (const name of COLLECTIONS) {
-    try { const s = await getDocs(collection(db, name)); out[name] = s.docs.map(d => ({ id: d.id, ...d.data() })); n += s.size; }
-    catch { out[name] = []; }
-  }
-  return { data: out, count: n };
-}
-
 function explain(err) {
   const c = err?.code || "";
   if (c.includes("invalid-credential") || c.includes("wrong-password") || c.includes("user-not-found")) return "That email and password don't match. Try again, or use Forgot password.";

@@ -1,3 +1,14 @@
+# Clean-up — October 18, 2026 (v53)
+
+No visible changes. Checked by screenshotting 24 screens and overlays (review, each tab, a workout day, the exercise picker, Settings, Delete my account, Feedback, the questionnaire, Stretch) before and after: pixel-identical except the version number.
+
+- **Split the big file.** `js/app.js` went from 2,890 lines to about 1,700. Each screen now has its own file in `js/views/` (workout, review, progress, body, crew, stretch, settings, questionnaire, feedback, usage).
+- **Removed dead code:** the one-time importer from the first Firebase project (no button reached it any more), plus a few unused variables and imports. The adductor repair stays until the old data has had time to settle on every phone. The "Home workout" day stays: it's still used.
+- **Code checker:** `eslint.config.mjs` flags misspelled names (which would crash a screen) and unused ones. It found no crashes; the unused bits are gone.
+- **Automatic checks:** `.github/workflows/check.yml` runs the tests and the code checker on every push.
+- **New tests (2,254 checks now, was 2,134):** the week review (when it shows, growth lines, bonus suggestion, the full recap), Delete my account (member leaves, owner hands off to the longest-standing member, last one out deletes the crew, owner already gone, no crew, re-confirming sign-in) against an in-memory Firebase, and that every script is cached for offline use and preloaded.
+- **Firebase 10 → 12:** prepared separately (see the `firebase-12` branch) so it can be switched on when someone can sign in, save and delete right after. Every function the app uses exists in 12.19 and 13.0.
+
 # Audit — October 17, 2026 (v51)
 
 What was checked: accessibility (axe-core, WCAG 2.2 AA + best practice) on 13 screens × 7 themes × light/dark × normal, high-contrast, Biggest text and every option on; layout at 320, 390 and 768 px wide at normal, Huge and Biggest text; script injection through names, feedback and custom exercises; Firestore rules; copy; Lighthouse speed. Tests: `node tests/run.mjs` (2,134 checks) plus browser scripts.

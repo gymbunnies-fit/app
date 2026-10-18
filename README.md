@@ -71,16 +71,20 @@ Benny and Mat's Monday–Thursday workout plan and tracker. It runs on GitHub Pa
 | `js/a11y.js` | Accessibility options, presets, announcements, speech, focus handling. |
 | `fonts/` | Reading fonts (Atkinson Hyperlegible, Lexend, OpenDyslexic) and their open licenses. |
 | `js/stats.js` | Progress math: best sets, weight-bump rules, reports. |
-| `js/app.js` | Screens and buttons. |
+| `js/app.js` | The app shell: shared state, the Workout day logic, saving, and every button's action. |
+| `js/views/` | One file per screen: `workout`, `review` (week in review), `progress`, `body`, `crew`, `stretch`, `settings` (incl. Delete my account), `questionnaire`, `feedback`, and `usage` (anonymous counts). |
 | `js/firebase.js` | Sign-in, crews, database connection and Firebase config. |
 | `firestore.rules` | Security rules to paste into Firebase. |
 | `css/styles.css` | Look and feel. |
 | `sw.js` | Offline support. |
-| `tests/run.mjs` | Tests for the progress math and content. Run `node tests/run.mjs`. |
+| `tests/run.mjs` | Tests for the progress math, content, week review and Delete my account. Run `node tests/run.mjs`. |
+| `tests/fake-firebase.mjs` | An in-memory stand-in for Firebase so the delete tests run offline. |
+| `eslint.config.mjs` | The code checker: flags misspelled or unused names. Run `npx eslint js tools tests sw.js`. |
+| `.github/workflows/check.yml` | Runs the tests and the code checker on every push. |
 | `AUDIT.md` | Latest audit: what was checked and fixed. |
 
 ### Changing the plan
-Edit `js/plan.js` on GitHub. Keep each exercise's `id` the same, since logged history is matched by id. After any change, bump `VERSION` in `sw.js` (for example `twp-v1` → `twp-v2`) and `APP_VERSION` in `js/app.js` to match, so installed phones pick up the update and Settings shows the new number.
+Edit `js/plan.js` on GitHub. Keep each exercise's `id` the same, since logged history is matched by id. After any change, bump `VERSION` in `sw.js` (for example `twp-v1` → `twp-v2`) and `APP_VERSION` in `js/app.js` to match, so installed phones pick up the update and Settings shows the new number. New files in `js/` also go in the `SHELL` list in `sw.js`, `SHELL_FILES` in `js/app.js`, and the `modulepreload` links in `index.html`.
 
 ## Setup
 1. **Firebase → Authentication → Sign-in method:** turn on **Google** and **Email/Password**. (Anonymous can be turned off.)

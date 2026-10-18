@@ -1,0 +1,19 @@
+name: Check
+# Runs on every push: the unit tests, then the code checker (misspelled or unused names).
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node tests/run.mjs
+      - run: npm install --no-save --no-package-lock eslint@9 globals@17
+      - run: npx eslint --max-warnings 0 js tools tests sw.js

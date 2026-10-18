@@ -1,4 +1,4 @@
-// Unit tests for the progress math. Run with:  node tests/run.mjs
+// Unit tests for the progress math, the week review and Delete my account. Run with:  node tests/run.mjs
 // No packages needed. Copies the js/ modules into a temp folder as ES modules.
 import { mkdtempSync, readdirSync, copyFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -281,5 +281,21 @@ for (const b of BUILTIN) {
   a = A.load({ textSize: "l", _t: 1 }, "benny");
   yes("another person's phone copy is ignored", a.textSize === "l" && a.toastTime === 4);
 }
+// ---- every script is cached for offline use and preloaded
+{
+  const { readFileSync, readdirSync } = await import("node:fs");
+  const files = [...readdirSync(join(here, "../js")).filter(f => f.endsWith(".js")).map(f => `js/${f}`), ...readdirSync(join(here, "../js/views")).map(f => `js/views/${f}`)];
+  const sw = readFileSync(join(here, "../sw.js"), "utf8"), app = readFileSync(join(here, "../js/app.js"), "utf8"), html = readFileSync(join(here, "../index.html"), "utf8");
+  for (const f of files) {
+    yes(`offline cache has ${f}`, sw.includes(`"${f}"`));
+    yes(`update check refreshes ${f}`, app.includes(`"${f}"`));
+    if (f !== "js/app.js") yes(`index.html preloads ${f}`, html.includes(`<link rel="modulepreload" href="${f}">`));
+  }
+  eq("app and offline cache versions match", app.match(/APP_VERSION = "(\d+)"/)?.[1], sw.match(/twp-v(\d+)/)?.[1]);
+}
+
+// ---- week review and Delete my account
+await (await import("./app-logic.mjs")).run({ dir, here, eq, yes });
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

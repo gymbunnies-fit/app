@@ -94,6 +94,7 @@ const events = Object.keys(evTot).map(k => ({ key: k, label: nice(k), kind: k.st
   .sort((a, b) => b.total - a.total);
 
 // The same numbers as row tables, for the dashboard.
+// eslint-disable-next-line no-unused-vars
 const { days: _d, plans: _p, totals: _t, ...head } = out;
 writeFileSync("summary.json", JSON.stringify([{ ...head, ...Object.fromEntries(Object.entries(totals).map(([k, n]) => [`total_${k}`, n])) }]));
 writeFileSync("daily.json", JSON.stringify(days));
