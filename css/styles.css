@@ -937,3 +937,6 @@ button.rv-day{cursor:pointer}
 .rv-back svg{transform:rotate(90deg)}
 body.a11y-big-text .rv-day{grid-template-columns:1fr}
 body.a11y-big-text .rv-day svg{display:none}
+/* iOS Safari gives date fields a minimum width wider than a narrow card; keep them inside their box */
+input[type=date]{-webkit-appearance:none;appearance:none;display:block;box-sizing:border-box;width:100%;min-width:0;max-width:100%}
+input[type=date]::-webkit-date-and-time-value{text-align:left;min-height:1.4em}
