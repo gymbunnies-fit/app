@@ -960,3 +960,32 @@ body[data-skin="iron"] .chips.day-tiles button[aria-pressed="true"] :is(.d,.m,.t
 /* Questionnaire Back / Next buttons share the row, or stack when there isn't room */
 .ob-nav{flex-wrap:wrap}
 .ob-nav .btn{flex:1 1 120px;min-width:0}
+
+/* body map (Progress > Focus): an anatomy plate, the same light paper in every theme */
+.bm .seg{margin:10px 0}
+.bm-plate{background:#f4ede4;border:1px solid #d9cbb8;border-radius:16px;padding:10px 6px 12px;color:#2a2424}
+.bm-figs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}
+.bm-figs figure{margin:0;display:flex;flex-direction:column;align-items:center;gap:2px}
+.bm-figs figcaption{font:700 .75rem var(--body);letter-spacing:.08em;text-transform:uppercase;color:#5e5150}
+.bm-fig{width:100%;max-width:220px;height:auto;display:block;overflow:visible}
+.bm-m{cursor:pointer;transition:fill .2s}
+.bm-x{pointer-events:none}
+.bm-legend{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-wrap:wrap;justify-content:center;gap:4px 14px;font-size:.82rem;color:#4a3f3f}
+.bm-legend li{display:flex;align-items:center;gap:6px}
+.bm-sw{width:14px;height:14px;border-radius:4px;flex:none;display:inline-block}
+.bm-hint{margin:6px 8px 0;text-align:center;font-size:.82rem;color:#4a3f3f}
+.bm-sel{margin-top:12px;border:2px solid var(--accent);border-radius:14px;padding:12px 14px;display:grid;gap:8px}
+.bm-sel p{margin:0}
+.bm-list-h{margin:14px 0 6px;font:700 .8rem var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.bm-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px}
+.bm-item{width:100%;display:flex;align-items:center;gap:8px;min-height:44px;padding:8px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);font:600 .95rem var(--body);text-align:left;cursor:pointer}
+.bm-item[aria-pressed="true"]{border:2px solid var(--accent);background:var(--inset)}
+.bm-item .bm-n{flex:1;min-width:0;line-height:1.2}
+.bm-item .bm-v{font-variant-numeric:tabular-nums;color:var(--muted)}
+.bm-shape{margin-top:14px}
+.bm-shape-row{display:grid;gap:4px;margin-top:10px}
+.bm-shape-l{font:700 .8rem var(--body);letter-spacing:.06em;text-transform:uppercase}
+.bm-shape .seg{margin:0}
+body.a11y-big-text .bm-list{grid-template-columns:1fr}
+body.a11y-big-text .bm-item .bm-n{white-space:normal}
+@media (prefers-reduced-motion:reduce){.bm-m{transition:none}}

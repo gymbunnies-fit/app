@@ -23,7 +23,7 @@ import { focusSaved, openKey, stretchBox, viewToday } from "./views/workout.js";
 
 // ---------------------------------------------------------------- helpers
 // Shown at the bottom of Settings so you can tell whether a phone has the latest update. Bump with sw.js VERSION.
-const APP_VERSION = "55";
+const APP_VERSION = "56";
 // The app's name lives here only (plus app-v41.webmanifest and the <title> tags in index.html, which can't read JS).
 const APP_NAME = "GymBunnies.fit";
 const $ = (s, r = document) => r.querySelector(s);
@@ -180,6 +180,7 @@ function toast(msg, spoken = null) {
 // ---------------------------------------------------------------- state
 const state = {
   fb: [], fbMode: null, fbDraft: null,
+  bmSel: null, bmMode: store.get("twp-bm-mode", "effort"), bmShapeOpen: false, bodyShape: {},
   user: store.get("twp-user", null),
   partner: store.get("twp-partner", false),
   view: store.get("twp-view", "today"),
@@ -1429,6 +1430,16 @@ document.addEventListener("click", e => {
     case "saveCheckin": saveCheckin(); focusSaved(); render(); break;
     case "viewUser": state.viewUser = el.dataset.u; state.confirmDel = null; render(); break;
     case "progTab": state.progTab = v; render(); break;
+    case "bmPick": state.bmSel = v; render(); if (el.tagName === "path") document.querySelector(".bm-sel")?.scrollIntoView({ block: "nearest", behavior: A.reduceMotion() ? "auto" : "smooth" }); break;
+    case "bmMode": state.bmMode = v; store.set("twp-bm-mode", v); render(); break;
+    case "bmShapeToggle": state.bmShapeOpen = !el.parentElement.open; break;
+    case "bmShape": {
+      // Saved to this person's own account record (only they can read it), never to the crew's data.
+      const [key, val] = v.split(":"); const u = state.viewUser; const uid = state.auth.user?.uid;
+      state.bodyShape = { ...state.bodyShape, [u]: { ...(state.bodyShape[u] || {}), [key]: +val } };
+      if (uid) { store.set(`twp-shape-${uid}`, state.bodyShape); setUserDoc(uid, { bodyShape: state.bodyShape }).catch(() => toast("Couldn't save your body shape. It's kept on this phone for now.")); }
+      render(); break;
+    }
     case "repTab": state.repTab = v; render(); break;
     case "openDay": {
       const s = state.data.sessions.find(x => x.id === el.dataset.id); if (!s) break;
@@ -1639,7 +1650,11 @@ watchAuth(async (u, err) => {
   state.auth.user = u;
   if (!u) { stopAll(); state.auth.ready = true; render(); return; }
   let crewId = store.get(`twp-crew-${u.uid}`, null);
-  try { const d = await getUserDoc(u.uid); if (d?.crewId) crewId = d.crewId; } catch (e) { state.auth.error = e.message; }
+  state.bodyShape = store.get(`twp-shape-${u.uid}`, {}) || {};
+  try {
+    const d = await getUserDoc(u.uid); if (d?.crewId) crewId = d.crewId;
+    if (d?.bodyShape && typeof d.bodyShape === "object") { state.bodyShape = d.bodyShape; store.set(`twp-shape-${u.uid}`, d.bodyShape); }
+  } catch (e) { state.auth.error = e.message; }
   if (crewId) startCrew(crewId);
   state.auth.ready = true; render();
 });
@@ -1728,7 +1743,7 @@ if ("serviceWorker" in navigator) {
 // ---------------------------------------------------------------- updates
 // Every time the app opens (or comes back to the front), ask the server which version is live.
 // If it's newer than this copy, throw the old copy away and reload. No buttons needed.
-const SHELL_FILES = ["./", "index.html", "css/styles.css", "js/app.js", "js/plan.js", "js/stats.js", "js/firebase.js", "js/library.js", "js/fun.js", "js/safety.js", "js/timer.js", "js/a11y.js", "js/icons.js", "js/tailor.js", "js/program.js", "js/stretch.js", "js/views/areas.js", "js/views/body.js", "js/views/crew.js", "js/views/feedback.js", "js/views/progress.js", "js/views/questionnaire.js", "js/views/review.js", "js/views/settings.js", "js/views/stretch.js", "js/views/usage.js", "js/views/workout.js", "app-v41.webmanifest", "sw.js"];
+const SHELL_FILES = ["./", "index.html", "css/styles.css", "js/app.js", "js/plan.js", "js/stats.js", "js/firebase.js", "js/library.js", "js/fun.js", "js/safety.js", "js/timer.js", "js/a11y.js", "js/icons.js", "js/tailor.js", "js/program.js", "js/stretch.js", "js/anatomy.js", "js/muscles.js", "js/views/areas.js", "js/views/bodymap.js", "js/views/body.js", "js/views/crew.js", "js/views/feedback.js", "js/views/progress.js", "js/views/questionnaire.js", "js/views/review.js", "js/views/settings.js", "js/views/stretch.js", "js/views/usage.js", "js/views/workout.js", "app-v41.webmanifest", "sw.js"];
 async function liveVersion() {
   try { const r = await fetch(`sw.js?check=${Date.now()}`, { cache: "no-store" }); const m = /VERSION = "twp-v(\d+)"/.exec(await r.text()); return m ? m[1] : null; } catch { return null; }
 }

@@ -319,6 +319,41 @@ for (const b of BUILTIN) {
   eq("logged shoulder sets count left/right as one set", r.shoulders.didMain, 2);
 }
 
+// ---- body map: every plan exercise maps to a muscle; counts; shapes always draw
+{
+  const MU = await import(join(here, "../js/muscles.js"));
+  const { anatomy } = await import(join(here, "../js/anatomy.js"));
+  const { PLAN: P2, variantDef: vd } = await import(join(here, "../js/plan.js"));
+  for (const w of ["A", "B"]) for (const d of Object.values(P2[w])) for (const ex of d.ex) for (const v of ["std", "hard", "swap"]) {
+    const def = vd(ex, v); yes(`${def.name} maps to a muscle`, !!MU.musclesOf(def.name, ex.focus));
+  }
+  eq("curl aims at biceps", MU.musclesOf("Cable Curl").main, "biceps");
+  eq("hammer curl aims at biceps", MU.musclesOf("Hammer Curl").main, "biceps");
+  yes("lat pulldown helps biceps", MU.musclesOf("Lat Pulldown").also.includes("biceps"));
+  eq("an unknown move falls back to its focus", MU.musclesOf("Mystery Machine", ["back"]).main, "lats");
+  eq("nothing to go on gives nothing", MU.musclesOf("Mystery Machine", []), null);
+  const sess = [{ id: "s", user: "mat", date: "2026-10-13", exercises: [
+    { id: "x", name: "Cable Lateral Raise", sets: [{ w: 10, r: 12, side: "L" }, { w: 10, r: 12, side: "R" }, { w: 10, r: 12, side: "L" }, { w: 10, r: 12, side: "R" }] },
+    { id: "y", name: "Lat Pulldown", sets: [{ w: 80, r: 10 }, { w: 80, r: 10 }] }] }];
+  const r = MU.muscleReport([{ name: "Hammer Curl", focus: ["arms"], sets: 3 }], sess, "mat", "2026-10-12", "2026-10-25");
+  eq("left/right pairs count once", r.sideDelts.didMain, 2);
+  eq("helping sets are counted", r.biceps.didAlso, 2);
+  eq("planned sets are counted", r.biceps.planMain, 3);
+  eq("effort counts helping sets as half", MU.effort(r.biceps), 1);
+  eq("another person's sets don't count", MU.muscleReport([], sess, "benny").lats.didMain, 0);
+  eq("a bad stored shape falls back to the middle", MU.cleanShape({ hips: 999, chest: "x" }).hips, 35);
+  const ok = d => typeof d === "string" && d.length > 20 && !/NaN|undefined|Infinity/.test(d);
+  for (const chest of [0, 9, 15]) for (const shoulders of [36, 40, 45]) for (const waist of [24, 28, 35]) for (const hips of [31, 35, 41]) for (const build of [0.9, 1, 1.16]) {
+    const g = anatomy({ chest, shoulders, waist, hips, build });
+    const all = [g.silhouette, g.hands, g.feetFront, g.heel, g.headFront.base, ...Object.values(g.front), ...Object.values(g.back)];
+    if (!all.every(ok)) { yes(`shape ${chest}/${shoulders}/${waist}/${hips}/${build} draws`, false); break; }
+  }
+  yes("all 243 body shapes draw", true);
+  const g0 = anatomy(MU.DEFAULT_SHAPE);
+  const drawn = new Set([...Object.keys(g0.front), ...Object.keys(g0.back)]);
+  for (const id of Object.keys(MU.MUSCLES)) yes(`${id} is drawn on the figure`, drawn.has(id));
+}
+
 // ---- week review and Delete my account
 await (await import("./app-logic.mjs")).run({ dir, here, eq, yes });
 

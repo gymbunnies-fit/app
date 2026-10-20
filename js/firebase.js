@@ -204,6 +204,8 @@ export function dropField(name, id, path) {
 }
 // Sign out and wipe this phone's cached copy of the crew's data.
 export async function signOutAndClear() {
+  const uid = auth.currentUser?.uid;
+  if (uid) try { localStorage.removeItem(`twp-shape-${uid}`); } catch { /* storage blocked */ }
   await signOut(auth);
   try { await terminate(db); await clearIndexedDbPersistence(db); } catch (err) { console.warn("Cache clear", err); }
 }

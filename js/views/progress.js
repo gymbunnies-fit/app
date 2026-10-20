@@ -5,6 +5,7 @@ import * as F from "../fun.js";
 import * as S from "../stats.js";
 import { ALL_EX, FOCUS, PAIN_AREAS, PLAN } from "../plan.js";
 import { areaCard } from "./areas.js";
+import { bodyMapCard } from "./bodymap.js";
 
 // ---------------------------------------------------------------- calendar & badges & points
 function progCalendar() {
@@ -90,7 +91,7 @@ function progFocus() {
   const thisWk = weeks[S.mondayOf(TODAY())] || {};
   const groups = ["chest", "shoulders", "arms", "back", "core", "glutes", "legs", "calves"];
   const focus = PROFILES[u].focus;
-  return `${areaCard(u, TODAY())}<section class="card"><h3 class="h3">Sets per focus area, per week</h3>
+  return `${bodyMapCard(u)}${areaCard(u, TODAY())}<section class="card"><h3 class="h3">Sets per focus area, per week</h3>
     <p class="small muted">Counts sets marked Right or Hard. For muscle growth, about 10–20 hard sets per muscle group per week is a common target.</p>
     ${keys.length ? `<div class="chart-box"><canvas id="chart-focus"></canvas></div>` : `<p class="muted">Log a workout to see this.</p>`}
     <table class="t"><thead><tr><th>This week</th><th>Sets</th></tr></thead><tbody>${groups.map(g => `<tr><td>${FOCUS[g]}${focus.includes(g) ? ` <span class="tag new">Focus</span>` : ""}</td><td class="num">${thisWk[g] || 0}</td></tr>`).join("")}</tbody></table>
