@@ -104,6 +104,7 @@ const SWAPS = {
   "a-thu-plank": W("Dead Bug Hold","time","On your back, arms up, knees over hips, lower back pressed into the floor. Hold.",{q:"dead bug hold"}),
   "a-thu-goblet": W("Leg Press, Light","load","Moderate weight, feet shoulder width, controlled reps to about 90 degrees at the knee.",{q:"leg press"}),
   "a-thu-farmer": W("Suitcase Carry","carry","One heavy dumbbell in one hand, walk tall without leaning. Switch hands each set."),
+  "a-thu-curl": W("Cable Curl","load","Straight bar at the low pulley. Elbows at your sides, curl up and lower slowly.",{q:"cable bicep curl"}),
   "a-thu-calf": W("Seated Calf Raise","load","Pad on your knees, balls of feet on the platform. Lift your heels, pause, lower slowly.",{q:"seated calf raise machine"}),
   "b-mon-inc": W("Incline Machine Press","load","Seat set so the handles start at upper-chest height. Press up and slightly forward, lower slowly.",{q:"incline chest press machine"}),
   "b-mon-fly": W("Cable Crossover","load","Handles at shoulder height, step forward, bring your hands together in front of your chest.",{q:"cable crossover chest fly"}),
@@ -129,6 +130,7 @@ const SWAPS = {
   "b-thu-suit": W("Farmer Carry","carry","A heavy dumbbell in each hand, walk tall with short steady steps.",{db:true,q:"farmers carry dumbbells"}),
   "b-thu-hold": W("Lower Back Machine","load","Seated back extension machine, light weight, slow reps.",{sr:"3 × 12",q:"back extension machine seated"}),
   "b-thu-goblet": W("Leg Press, Light","load","Moderate weight, feet shoulder width, controlled reps to about 90 degrees at the knee.",{q:"leg press"}),
+  "b-thu-curl": W("Biceps Curl Machine","load","Upper arms flat on the pad. Curl up, squeeze, and lower slowly.",{q:"biceps curl machine"}),
   "b-thu-calf": W("Seated Calf Raise","load","Pad on your knees, lift your heels, pause, lower slowly.",{q:"seated calf raise machine"})
 };
 
@@ -185,6 +187,8 @@ export const PLAN = {
         h:H("Jump Squats","3 × 8","bw","Squat to parallel, then jump straight up. Land softly with bent knees and reset before the next rep. Impact builds bone density.")}),
       X("a-thu-farmer","Farmer Carry","3 × 40 steps","new",["core","full"],"carry","Heavy dumbbell in each hand, walk tall. Trains core, grip, and posture at once.","Pick up the dumbbells with a flat back. Shoulders down, chest up, and walk with short, steady steps.",["forearm","neck"],{q:"farmers carry dumbbells",db:true,
         h:H("Heavy Farmer Carry","3 × 60 steps","carry","The heaviest dumbbells you can hold with good posture for the full walk.",{q:"farmers carry",db:true})}),
+      X("a-thu-curl","Biceps Curl Machine","3 × 10–12","new",["arms"],"load","A second biceps day each week. The pad keeps your elbows still so the biceps do the work.","Set the seat so your upper arms rest flat on the pad with the elbows lined up with the machine's pivot. Curl up, squeeze, and take about three seconds to lower.",["bicep","forearm"],{q:"biceps curl machine",
+        h:H("Incline Dumbbell Curl","3 × 10–12","load","Sit back on a bench set to about 45 degrees, arms hanging straight down. Curl without moving your elbows forward. A deep stretch on the biceps.",{q:"incline dumbbell curl",db:true})}),
       X("a-thu-calf","Standing Calf Raise (Smith)","3 × 12–15","orig",["calves"],"load","Skip it on days a foot is sore.","Balls of your feet on a small plate or step, bar on your upper back. Rise up, pause, lower your heels slowly.",["calf","ankle"],{q:"smith machine calf raise",
         h:H("Jump Rope","3 × 60 sec","time","Small quick hops on the balls of your feet. Good for calves, cardio, and bone density.",{q:"jump rope basics"}),
         notes:{mat:"Skip this while the foot is healing."}})
@@ -237,6 +241,8 @@ export const PLAN = {
         h:H("Sit-Ups","3 × 15","bw","Feet anchored or flat, arms crossed on your chest. Curl all the way up and lower slowly. Hold a plate at your chest to make it harder.",{q:"sit ups"})}),
       X("b-thu-goblet","Goblet Box Squat","3 × 10","orig",["legs","glutes"],"load","Lower the bench over time if your knees allow.","Hold one dumbbell upright at your chest. Sit back to a bench, touch lightly, and stand up tall.",["quad","fig4"],{q:"goblet squat to box",
         h:H("Dumbbell Step-Ups","3 × 10 per leg","load","Knee-height box or bench, dumbbell in each hand. Drive up through the top foot without pushing off the bottom one.",{q:"dumbbell step ups",db:true})}),
+      X("b-thu-curl","Cable Curl","3 × 10–12","new",["arms"],"load","A second biceps day each week. The cable keeps tension on the whole way up and down.","Straight bar at the low pulley. Stand tall with elbows pinned to your sides. Curl up, squeeze, and lower slowly without leaning back.",["bicep","forearm"],{q:"cable bicep curl",
+        h:H("Cable Curl, 4 sets","4 × 8–10","load","Same cable, heavier weight, one extra set. Keep the elbows still on the last reps.",{q:"cable bicep curl"})}),
       X("b-thu-calf","Standing Calf Raise (Smith)","3 × 12–15","orig",["calves"],"load","Skip it on days a foot is sore.","Balls of your feet on a small plate or step. Rise up, pause, and lower your heels slowly.",["calf","ankle"],{q:"smith machine calf raise",
         h:H("Jump Rope","3 × 60 sec","time","Small quick hops on the balls of your feet.",{q:"jump rope basics"}),
         notes:{mat:"Skip this while the foot is healing."}})

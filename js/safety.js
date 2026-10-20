@@ -69,6 +69,8 @@ export const PLAN_SAFETY = {
   "a-thu-farmer": R({ shoulders: 1, lowerBack: 1, wrists: 1 },
     ["lowerBack", "Back strain picking up or putting down", "Squat down with a flat back to lift and set the weights down."],
     ["ankles", "Dropping a dumbbell on your foot", "Clear path, controlled set-down."]),
+  "a-thu-curl": R({ elbows: 1, wrists: 1 },
+    ["elbows", "Inner-elbow tendon irritation", "Lower slowly and don't let the weight stack drop."]),
   "a-thu-calf": R({ ankles: 2 },
     ["ankles", "Achilles or plantar fascia irritation", "Slow reps, no bouncing, skip with a foot injury."]),
   // ---- Week B Monday
@@ -129,6 +131,8 @@ export const PLAN_SAFETY = {
     ["lowerBack", "Low back strain", "Hold a straight line, not an arch."]),
   "b-thu-goblet": R({ knees: 1, hips: 1 },
     ["knees", "Knee pain", "Raise the bench until comfortable."]),
+  "b-thu-curl": R({ elbows: 1, wrists: 1 },
+    ["elbows", "Inner-elbow tendon irritation", "Controlled reps, no leaning back or swinging."]),
   "b-thu-calf": R({ ankles: 2 },
     ["ankles", "Achilles or plantar fascia irritation", "Slow reps, no bouncing, skip with a foot injury."])
 };

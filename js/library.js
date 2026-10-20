@@ -258,11 +258,11 @@ export const PLAN_PATTERN = {
   "a-mon-cp": "push", "a-mon-inc": "push", "a-mon-sp": "push", "a-mon-lat": "isolation", "a-mon-push": "isolation", "a-mon-fly": "isolation",
   "a-tue-pd": "pull", "a-tue-row": "pull", "a-tue-pu": "pull", "a-tue-bext": "hinge", "a-tue-rdelt": "isolation", "a-tue-curl": "isolation",
   "a-wed-ht": "hinge", "a-wed-dl": "hinge", "a-wed-sq": "squat", "a-wed-lunge": "lunge", "a-wed-curl": "isolation", "a-wed-ext": "isolation", "a-wed-abd": "isolation",
-  "a-thu-bug": "core", "a-thu-pallof": "rotation", "a-thu-plank": "core", "a-thu-goblet": "squat", "a-thu-farmer": "carry", "a-thu-calf": "isolation",
+  "a-thu-bug": "core", "a-thu-pallof": "rotation", "a-thu-plank": "core", "a-thu-goblet": "squat", "a-thu-farmer": "carry", "a-thu-curl": "isolation", "a-thu-calf": "isolation",
   "b-mon-inc": "push", "b-mon-fly": "isolation", "b-mon-sp": "push", "b-mon-clat": "isolation", "b-mon-dip": "push", "b-mon-ohext": "isolation",
   "b-tue-cgpd": "pull", "b-tue-csrow": "pull", "b-tue-sapd": "pull", "b-tue-bext": "hinge", "b-tue-face": "pull", "b-tue-hammer": "isolation",
   "b-wed-ht": "hinge", "b-wed-rdl": "hinge", "b-wed-lp": "squat", "b-wed-split": "lunge", "b-wed-curl": "isolation", "b-wed-add": "isolation", "b-wed-abd": "isolation",
-  "b-thu-rot": "rotation", "b-thu-knee": "core", "b-thu-suit": "carry", "b-thu-hold": "core", "b-thu-goblet": "squat", "b-thu-calf": "isolation"
+  "b-thu-rot": "rotation", "b-thu-knee": "core", "b-thu-suit": "carry", "b-thu-hold": "core", "b-thu-goblet": "squat", "b-thu-curl": "isolation", "b-thu-calf": "isolation"
 };
 
 // Stretches to suggest for a library exercise, by its main focus.
@@ -548,9 +548,9 @@ export const PLAN_MACHINES = {
   "a-tue-pd": ["m-lat-pulldown", "m-mts-pulldown"], "a-tue-row": ["m-seated-row", "m-mts-row"], "a-tue-pu": ["m-assist"], "a-tue-bext": ["m-back-ext"],
   "a-tue-rdelt": ["m-rear-delt"], "a-tue-curl": ["m-arm-curl", "m-biceps-curl"],
   "a-wed-sq": ["m-leg-press"], "a-wed-curl": ["m-leg-curl"], "a-wed-ext": ["m-leg-ext"],
-  "a-thu-goblet": ["m-leg-press"], "a-thu-calf": ["m-calf"],
+  "a-thu-goblet": ["m-leg-press"], "a-thu-curl": ["m-biceps-curl", "m-arm-curl"], "a-thu-calf": ["m-calf"],
   "b-mon-inc": ["m-mts-incline"], "b-mon-fly": ["m-pec-fly"], "b-mon-sp": ["m-shoulder-press", "m-mts-shoulder-press"], "b-mon-dip": ["m-assist", "m-triceps-press"], "b-mon-ohext": ["m-triceps-ext"],
   "b-tue-cgpd": ["m-mts-pulldown", "m-lat-pulldown"], "b-tue-csrow": ["m-mts-row", "m-seated-row"], "b-tue-bext": ["m-back-ext"], "b-tue-face": ["m-rear-delt"], "b-tue-hammer": ["m-arm-curl", "m-biceps-curl"],
   "b-wed-lp": ["m-leg-press"], "b-wed-curl": ["m-leg-curl"],
-  "b-thu-rot": ["m-rotary-torso"], "b-thu-hold": ["m-back-ext"], "b-thu-goblet": ["m-leg-press"], "b-thu-calf": ["m-calf"]
+  "b-thu-rot": ["m-rotary-torso"], "b-thu-hold": ["m-back-ext"], "b-thu-goblet": ["m-leg-press"], "b-thu-curl": ["m-arm-curl", "m-biceps-curl"], "b-thu-calf": ["m-calf"]
 };
