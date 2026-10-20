@@ -23,7 +23,7 @@ import { focusSaved, openKey, stretchBox, viewToday } from "./views/workout.js";
 
 // ---------------------------------------------------------------- helpers
 // Shown at the bottom of Settings so you can tell whether a phone has the latest update. Bump with sw.js VERSION.
-const APP_VERSION = "53";
+const APP_VERSION = "54";
 // The app's name lives here only (plus app-v41.webmanifest and the <title> tags in index.html, which can't read JS).
 const APP_NAME = "GymBunnies.fit";
 const $ = (s, r = document) => r.querySelector(s);
@@ -361,21 +361,28 @@ const editKey = (u, date, id) => `${u}|${date}|${slotKey()}|${id}`;
 function prefillSets(u, def, id, v, date = LD()) {
   const light = deloadActive(u, date) ? x => ({ ...x, sets: lightSets(x.sets, def.db) }) : x => x;
   const last = S.lastTime(state.data.sessions.filter(s => !deloadActive(u, s.date) || s.date === date), u, id, v);
-  if (last && last.sets?.length) return light({ sets: last.sets.map(s => ({ w: s.w || 0, r: s.r || 0, d: 2 })), fresh: false });
   const { sets, min, max } = S.parseRange(def.sr || "3 × 10");
+  if (last && last.sets?.length) {
+    // Last time's weights and reps, but today's number of sets (the same move can have 2 sets one day, 3 another).
+    const prev = S.withSides(last.sets, false).map(s => ({ w: s.w || 0, r: s.r || 0, d: 2 }));
+    const n = last.id === id ? prev.length : sets || prev.length;
+    return light({ sets: Array.from({ length: n }, (_, i) => ({ ...(prev[i] || prev[prev.length - 1]) })), fresh: false });
+  }
   const start = (P(u).start || {})[v === "std" ? id : `${id}:${v}`] ?? 0;
   const r = def.kind === "time" ? (min || 30) : (max || min || 10);
   return light({ sets: Array.from({ length: sets || 3 }, () => ({ w: start, r, d: 2 })), fresh: true });
 }
 function getDraft(u, date, ex, logged) {
-  const k = dKey(u, date, ex.id); let d = store.get(k, null);
-  if (d) return d;
+  const k = dKey(u, date, ex.id); const d = store.get(k, null);
+  if (d) return sided(ex, d);
   if (logged) return { variant: logged.variant || "std", sets: logged.sets.map(s => ({ ...s, done: true })), fresh: false };
   const v = ex.custom ? "std" : variantOf(u, ex);
   const def = defOf(ex, v);
   const p = prefillSets(u, { sr: srFor(u, ex, def), kind: def.kind, db: def.db }, ex.id, v, date);
-  return { variant: v, ...p };
+  return sided(ex, { variant: v, ...p });
 }
+// One-arm and one-leg moves log a Left and a Right row for each set.
+function sided(ex, d) { return { ...d, sets: S.withSides(d.sets || [], S.isSided(defOf(ex, d.variant).name)) }; }
 const putDraft = (u, date, id, d) => store.set(dKey(u, date, id), d);
 
 // Extra exercises added for a day but not saved yet.
@@ -926,6 +933,20 @@ function ring(done, total) {
 const dayEdits = (u, week, day) => ({ add: [], remove: [], order: [], sr: {}, title: "", ...(planEdits(u)[`${week}-${day}`] || {}) });
 const dayTitle = (u, week, day) => dayEdits(u, week, day).title || planDay(u, week, day).title;
 const srFor = (u, ex, def) => dayEdits(u, state.sel.week, state.sel.day).sr[ex.id] || def.sr;
+// Every exercise in someone's two-week plan, with its sets, for the body-area report.
+function cyclePlan(u) {
+  const out = [];
+  for (const week of ["A", "B"]) for (const day of daysFor(u, week)) {
+    const ed = dayEdits(u, week, day);
+    const list = planDay(u, week, day).ex.filter(ex => !ed.remove.includes(ex.id));
+    for (const id of ed.add) { const ex = resolveEx(id, {}); if (ex) list.push(ex); }
+    for (const ex of list) {
+      const v = ex.custom ? "std" : variantOf(u, ex); const def = defOf(ex, v);
+      out.push({ name: def.name, focus: def.focus?.length ? def.focus : ex.focus || [], sets: S.parseRange(ed.sr[ex.id] || def.sr || ex.sr).sets, week, day });
+    }
+  }
+  return out;
+}
 
 // ---------------------------------------------------------------- profile setup (the interview)
 function openProfileForm(id) {
@@ -1018,7 +1039,7 @@ function cardFor(el) {
 function saveExercise(c) {
   const v = c.d.variant;
   const def = defOf(c.ex, v);
-  const sets = c.d.sets.map(s => ({ w: +s.w || 0, r: +s.r || 0, d: +s.d || 2 })).filter(s => s.r > 0 || s.w > 0);
+  const sets = c.d.sets.map(s => ({ w: +s.w || 0, r: +s.r || 0, d: +s.d || 2, ...(s.side ? { side: s.side } : {}) })).filter(s => s.r > 0 || s.w > 0);
   if (!sets.length) { toast("Add at least one set first."); return; }
   if (def.kind === "load" || def.kind === "carry") { const i = sets.findIndex(s => !s.w); if (i >= 0) { toast(`Set ${i + 1} has no weight. Fill it in or remove that set.`); return; } }
   const entry = { id: c.id, variant: v, name: def.name, kind: def.kind, db: !!def.db, sets, ...(c.added ? { added: true } : {}), ...(def.focus ? { focus: def.focus } : {}) };
@@ -1083,6 +1104,17 @@ function setValue(c, f, val, typingIn) {
 
 // ---------------------------------------------------------------- events
 // Only the content area scrolls (the header and tab bar are fixed in the layout), so "back to top" scrolls it.
+// The saved card folds up, so everything under it slides up and the page seemed to jump to the bottom.
+// Keep the saved card where it was (or at the top, if you'd scrolled past its start).
+function anchorOf(id) {
+  const main = $("#main"); const el = document.getElementById(id); if (!main || !el) return () => {};
+  const top0 = Math.max(8, el.getBoundingClientRect().top - main.getBoundingClientRect().top);
+  return () => {
+    const now = document.getElementById(id); if (!now || focusOnNow()) return;
+    main.scrollTop += (now.getBoundingClientRect().top - main.getBoundingClientRect().top) - top0;
+  };
+}
+const focusOnNow = () => !!document.querySelector("#main .focus-head");
 function toTop() { $("#main")?.scrollTo(0, 0); window.scrollTo(0, 0); }
 function go(view) {
   if (view === "report") { view = "progress"; state.progTab = "report"; }
@@ -1306,9 +1338,17 @@ document.addEventListener("click", e => {
       { const all = c.d.sets.every(x => x.done); c.card.classList.toggle("all-done", all); const n = c.card.querySelector(".ex-num"); if (n) { n.classList.toggle("filled", all); n.innerHTML = all ? icon("check", 18) : String(todaysList(c.u, c.date).findIndex(x => x.ex.id === c.id) + 1); } }
       c.card.querySelector("[data-act=saveEx]")?.classList.toggle("ready", c.d.sets.every(x => x.done)); break;
     }
-    case "delSet": { const c = cardFor(el); c.d.sets.splice(c.si, 1); putDraft(c.u, c.date, c.id, c.d); render(); break; }
-    case "addSet": { const c = cardFor(el); c.d.sets.push({ ...(c.d.sets[c.d.sets.length - 1] || { w: 0, r: 10 }), d: 2, done: false }); putDraft(c.u, c.date, c.id, c.d); render(); break; }
-    case "saveEx": { const c = cardFor(el); saveExercise(c); { const k = openKey(c.u, c.date); const m = store.get(k, {}); delete m[c.id]; store.set(k, m); } focusSaved(); render(); break; }
+    case "delSet": { const c = cardFor(el); const side = c.d.sets[c.si]?.side; c.d.sets.splice(side === "R" ? c.si - 1 : c.si, side ? 2 : 1); putDraft(c.u, c.date, c.id, c.d); render(); break; }
+    case "addSet": {
+      const c = cardFor(el); const L = c.d.sets.length; const last = c.d.sets[L - 1] || { w: 0, r: 10 };
+      if (last.side) c.d.sets.push({ ...(c.d.sets[L - 2] || last), d: 2, done: false, side: "L" }, { ...last, d: 2, done: false, side: "R" });
+      else c.d.sets.push({ ...last, d: 2, done: false });
+      putDraft(c.u, c.date, c.id, c.d); render(); break;
+    }
+    case "saveEx": {
+      const c = cardFor(el); const keep = anchorOf(`ex-${c.id}`);
+      saveExercise(c); { const k = openKey(c.u, c.date); const m = store.get(k, {}); delete m[c.id]; store.set(k, m); } focusSaved(); render(); keep(); break;
+    }
     case "editEx": { const u = LU(), date = LD(); state.editing.add(editKey(u, date, el.dataset.ex)); const k = openKey(u, date); store.set(k, { ...store.get(k, {}), [el.dataset.ex]: true }); render(); break; }
     case "cancelEdit": { const c = cardFor(el); store.del(dKey(c.u, c.date, c.id)); state.editing.delete(editKey(c.u, c.date, c.id)); render(); break; }
     case "deleteEx": {
@@ -1541,8 +1581,26 @@ function onData(name, docs, fromCache, pending) {
   if (name === "pings") handlePings();
   if (["sessions", "body", "activities"].includes(name)) checkAchievements();
   updateSync();
+  // Firestore reports each save twice (sent, then confirmed) and the crew's other phone saves too. If nothing
+  // you can see changed, don't redraw: a redraw under your finger is what made taps on − / + go missing.
+  const sig = JSON.stringify(docs), prev = dataSigs[name];
+  dataSigs[name] = { sig, fromCache };
+  if (prev && prev.sig === sig && prev.fromCache === fromCache) return;
+  dataRender();
+}
+const dataSigs = {};
+// Hold data-driven redraws while a finger is on the screen and for a moment after, so a tap always lands
+// on the button you pressed. Your own taps still redraw straight away.
+let touchDown = false, touchAt = 0, dataT = null;
+document.addEventListener("pointerdown", () => { touchDown = true; touchAt = Date.now(); }, true);
+for (const t of ["pointerup", "pointercancel"]) document.addEventListener(t, () => { touchDown = false; touchAt = Date.now(); }, true);
+function dataRender() {
+  clearTimeout(dataT);
   const busyNow = state.overlay || document.activeElement?.matches?.("input, textarea, select");
-  if (!busyNow && !renderQueued) { renderQueued = true; requestAnimationFrame(() => { renderQueued = false; render(); }); }
+  if (busyNow) return;
+  const wait = touchDown ? 400 : 700 - (Date.now() - touchAt);
+  if (wait > 0) { dataT = setTimeout(dataRender, wait); return; }
+  if (!renderQueued) { renderQueued = true; requestAnimationFrame(() => { renderQueued = false; render(); }); }
 }
 function onStatus(status) { state.error = status.state === "error" ? status.message : null; updateSync(); if (state.error) render(); }
 
@@ -1670,7 +1728,7 @@ if ("serviceWorker" in navigator) {
 // ---------------------------------------------------------------- updates
 // Every time the app opens (or comes back to the front), ask the server which version is live.
 // If it's newer than this copy, throw the old copy away and reload. No buttons needed.
-const SHELL_FILES = ["./", "index.html", "css/styles.css", "js/app.js", "js/plan.js", "js/stats.js", "js/firebase.js", "js/library.js", "js/fun.js", "js/safety.js", "js/timer.js", "js/a11y.js", "js/icons.js", "js/tailor.js", "js/program.js", "js/stretch.js", "js/views/body.js", "js/views/crew.js", "js/views/feedback.js", "js/views/progress.js", "js/views/questionnaire.js", "js/views/review.js", "js/views/settings.js", "js/views/stretch.js", "js/views/usage.js", "js/views/workout.js", "app-v41.webmanifest", "sw.js"];
+const SHELL_FILES = ["./", "index.html", "css/styles.css", "js/app.js", "js/plan.js", "js/stats.js", "js/firebase.js", "js/library.js", "js/fun.js", "js/safety.js", "js/timer.js", "js/a11y.js", "js/icons.js", "js/tailor.js", "js/program.js", "js/stretch.js", "js/views/areas.js", "js/views/body.js", "js/views/crew.js", "js/views/feedback.js", "js/views/progress.js", "js/views/questionnaire.js", "js/views/review.js", "js/views/settings.js", "js/views/stretch.js", "js/views/usage.js", "js/views/workout.js", "app-v41.webmanifest", "sw.js"];
 async function liveVersion() {
   try { const r = await fetch(`sw.js?check=${Date.now()}`, { cache: "no-store" }); const m = /VERSION = "twp-v(\d+)"/.exec(await r.text()); return m ? m[1] : null; } catch { return null; }
 }
@@ -1700,4 +1758,4 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 try { const from = sessionStorage.getItem("twp-updated-from"); if (from) { sessionStorage.removeItem("twp-updated-from"); setTimeout(() => toast(from === APP_VERSION ? `Up to date: version ${APP_VERSION}.` : `Updated to version ${APP_VERSION}.`), 800); } } catch { /* ignore */ }
 
 // Shared with the screens in js/views/.
-export { $, APP_VERSION, AVATARS, DIFF, FUN_LEVELS, GROUPS, LD, LU, P, PROFILES, PROFILE_DEFAULTS, THEMES, TODAY, VARIANT_NOTE, a11yOn, aches, autoSel, avatarHtml, baseDay, bonusDates, bonusPickFor, bonusPicker, canSee, cardioProgram, closeOverlay, conflicts, crewCard, crewSettings, cycleStart, dayEdits, dayName, dayStatus, dayTitle, daysFor, defOf, deloadActive, deloadOf, deloadSuggestion, editKey, esc, funAt, funHeader, getDraft, gymSet, isHome, libItem, listText, nextPlanDay, other, otherSlotOn, paceOf, personToggle, planDay, planEditBox, profileIds, reminders, render, resolveEx, ring, riskBlock, saveProfile, seg, sessionFor, shareOf, slotDate, slotKey, slug, srFor, state, stopAll, store, supersetIdeas, toast, todaysList, vLabel, variantOf, warmupCard, workoutBar, yt, ytStretch };
+export { $, APP_VERSION, AVATARS, DIFF, FUN_LEVELS, GROUPS, LD, LU, P, PROFILES, PROFILE_DEFAULTS, THEMES, TODAY, VARIANT_NOTE, a11yOn, aches, autoSel, avatarHtml, baseDay, bonusDates, bonusPickFor, bonusPicker, canSee, cardioProgram, closeOverlay, conflicts, crewCard, crewSettings, cyclePlan, cycleStart, dayEdits, dayName, dayStatus, dayTitle, daysFor, defOf, deloadActive, deloadOf, deloadSuggestion, editKey, esc, funAt, funHeader, getDraft, gymSet, isHome, libItem, listText, nextPlanDay, other, otherSlotOn, paceOf, personToggle, planDay, planEditBox, profileIds, reminders, render, resolveEx, ring, riskBlock, saveProfile, seg, sessionFor, shareOf, slotDate, slotKey, slug, srFor, state, stopAll, store, supersetIdeas, toast, todaysList, vLabel, variantOf, warmupCard, workoutBar, yt, ytStretch };

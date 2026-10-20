@@ -139,7 +139,7 @@ function exerciseCard(u, date, ex, added, s, idx = 0, count = 0, cardOpts = {}) 
   if (logged && !state.editing.has(ek)) {
     const def = S.defFor(ex.id, logged.variant || "std", logged);
     return `<article class="card ex done-card" id="ex-${ex.id}">
-      <div class="head"><h3 class="name">${count ? `<span class="ex-num filled" aria-hidden="true">${icon("check", 18)}</span>` : `<span class="tick" aria-hidden="true">✓</span>`}<span class="visually-hidden">Done${count ? `, exercise ${idx + 1} of ${count}` : ""}: </span>${esc(logged.name || def.name)}${logged.variant && logged.variant !== "std" ? `<span class="tag new">${vLabel(logged.variant)}</span>` : ""}${added ? `<span class="tag orig">Added</span>` : ""}</h3><button class="btn small" data-act="editEx" data-ex="${ex.id}">Log</button></div>
+      <div class="head"><h3 class="name">${count ? `<span class="ex-num filled" aria-hidden="true">${icon("check", 18)}</span>` : `<span class="tick" aria-hidden="true">✓</span>`}<span class="visually-hidden">Done${count ? `, exercise ${idx + 1} of ${count}` : ""}: </span>${esc(logged.name || def.name)}${logged.variant && logged.variant !== "std" ? `<span class="tag new">${vLabel(logged.variant)}</span>` : ""}${added ? `<span class="tag orig">Added</span>` : ""}</h3><button class="btn small" data-act="editEx" data-ex="${ex.id}" aria-label="Edit ${esc(logged.name || def.name)}">Edit</button></div>
       <div class="last"><b>${esc(S.setsText(logged))}</b></div>
     </article>`;
   }
@@ -163,7 +163,7 @@ function exerciseCard(u, date, ex, added, s, idx = 0, count = 0, cardOpts = {}) 
   const checked = d.sets.filter(x => x.done).length;
   const allDone = d.sets.length > 0 && d.sets.every(x => x.done);
   const tmr = T.isActive(`set:${u}|${date}|${ex.id}|${d.sets.findIndex(x => !x.done)}`);
-  const lastLine = `${checked ? `<b>${checked} of ${d.sets.length} sets checked</b> · ` : ""}${tmr ? "<b>Timer running</b> · " : ""}${last ? `Last time: ${esc(S.describeSets(last.kind, last.db, last.sets))}` : "No history yet"}${!open && sore.high.length ? ` · <span class="warn-text">Hard on your ${esc(listText(sore.high.map(j => (JOINTS[j] || j).toLowerCase())))} today</span>` : ""}`;
+  const lastLine = `${checked ? `<b>${checked} of ${d.sets.length} ${d.sets.some(x => x.side) ? "sides" : "sets"} checked</b> · ` : ""}${tmr ? "<b>Timer running</b> · " : ""}${last ? `Last time: ${esc(S.describeSets(last.kind, last.db, last.sets))}` : "No history yet"}${!open && sore.high.length ? ` · <span class="warn-text">Hard on your ${esc(listText(sore.high.map(j => (JOINTS[j] || j).toLowerCase())))} today</span>` : ""}`;
   const head = `<div class="head ex-head"><h3 class="name"><button type="button" class="ex-toggle" data-act="toggleEx" aria-expanded="${open}" aria-controls="exb-${ex.id}">${exNum(idx, count, allDone)}<span class="ex-main"><span class="ex-name">${esc(def.name)}</span>${tags ? `<span class="ex-tags">${tags}</span>` : ""}</span>${schemeHtml(target)}<span class="ex-last">${lastLine}</span></button></h3></div>`;
   if (!open) return `<article class="card ex collapsed ${allDone ? "all-done" : ""}" id="ex-${ex.id}" data-ex="${ex.id}">${head}</article>`;
   return `<article class="card ex open ${allDone ? "all-done" : ""}" id="ex-${ex.id}" data-ex="${ex.id}">
@@ -226,13 +226,17 @@ function setTimer(u, date, id, sets) {
 function setRow(e, s, si) {
   const u = S.unitLabel(e.kind, e.db);
   const rStep = e.kind === "time" || e.kind === "carry" ? 5 : 1;
-  return `<div class="set ${u.w ? "" : "noweight"} ${s.done ? "is-done" : ""}" data-s="${si}">
-    <span class="set-n big-num" aria-hidden="true">${si + 1}</span>
-    ${u.w ? stepper("w", s.w, u.w, 1, `Set ${si + 1} weight`) : ""}
-    ${stepper("r", s.r, u.r, rStep, `Set ${si + 1} ${u.r === "sec" ? "seconds" : u.r}`)}
-    <button type="button" class="set-del icon-btn round ghost" data-act="delSet" aria-label="Remove set ${si + 1}">${icon("x", 18, { stroke: 2 })}</button>
-    <div class="diff" role="group" aria-label="How set ${si + 1} felt">${[1, 2, 3].map(d => `<button type="button" data-act="diff" data-d="${d}" aria-pressed="${(s.d || 2) === d}">${DIFF[d]}</button>`).join("")}</div>
-    <button type="button" class="setcheck" role="checkbox" aria-checked="${!!s.done}" data-act="setDone" aria-label="Set ${si + 1} done">${s.done ? icon("check", 22) : ""}</button>
+  // One-arm and one-leg moves: rows come in Left/Right pairs that share a set number.
+  const n = s.side ? Math.floor(si / 2) + 1 : si + 1;
+  const side = s.side === "L" ? "left" : s.side === "R" ? "right" : "";
+  const nm = `Set ${n}${side ? ` ${side}` : ""}`;
+  return `<div class="set ${u.w ? "" : "noweight"} ${s.done ? "is-done" : ""} ${s.side ? `sided side-${s.side}` : ""}" data-s="${si}">
+    <span class="set-n big-num" aria-hidden="true">${n}${s.side ? `<small class="side-tag">${s.side === "L" ? "Left" : "Right"}</small>` : ""}</span>
+    ${u.w ? stepper("w", s.w, u.w, 1, `${nm} weight`) : ""}
+    ${stepper("r", s.r, u.r, rStep, `${nm} ${u.r === "sec" ? "seconds" : u.r}`)}
+    ${s.side === "R" ? `<span class="set-del" aria-hidden="true"></span>` : `<button type="button" class="set-del icon-btn round ghost" data-act="delSet" aria-label="Remove set ${n}${s.side ? ", both sides" : ""}">${icon("x", 18, { stroke: 2 })}</button>`}
+    <div class="diff" role="group" aria-label="How ${nm.toLowerCase()} felt">${[1, 2, 3].map(d => `<button type="button" data-act="diff" data-d="${d}" aria-pressed="${(s.d || 2) === d}">${DIFF[d]}</button>`).join("")}</div>
+    <button type="button" class="setcheck" role="checkbox" aria-checked="${!!s.done}" data-act="setDone" aria-label="${nm} done">${s.done ? icon("check", 22) : ""}</button>
   </div>`;
 }
 function stepper(f, val, label, step, name = label) {

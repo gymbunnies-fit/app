@@ -27,6 +27,8 @@ export const esc = s => String(s ?? "").replace(/[&<>"']/g, c => "&#" + c.charCo
 export const listText = a => a.join(", ");
 export const libItem = () => null;
 export const bonusDates = () => [];
+export const cycleStart = () => t.cycle;
+export const cyclePlan = () => [];
 `);
   const R = await import(join(dir, "views/review.js"));
   const app = await import(join(dir, "app.js"));

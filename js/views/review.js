@@ -6,6 +6,7 @@ import * as S from "../stats.js";
 import * as TL from "../tailor.js";
 import { icon } from "../icons.js";
 import { ALL_EX } from "../plan.js";
+import { areaCard } from "./areas.js";
 
 // ---------------------------------------------------------------- week review
 // Once a week is finished (or over), the Workout screen shows a look back instead of the last day.
@@ -147,6 +148,7 @@ function weekReview(u, week, rv) {
     <section class="card" aria-labelledby="rv-days"><h3 class="h3" id="rv-days">Day by day</h3>
       <ul class="rv-days">${days.map(dayCard).join("")}${extra.map(x => `<li><button type="button" class="rv-day done" data-act="reviewDay" data-v="Bonus" data-date="${esc(x.date)}"><span class="rv-d">Bonus · ${esc(PG.BONUS_FOCUS[x.bonusFocus]?.[0] || dayName(x.day))}</span><span class="small muted">${S.fmtDate(x.date)} · ${(x.exercises || []).filter(e => e.sets?.length).length} exercises</span>${icon("chevron", 18, { stroke: 2 })}</button></li>`).join("")}</ul>
       <p class="small muted">Tap a day to see or change what you logged.</p></section>
+    ${areaCard(u, from, { id: "rv" })}
     ${notes.length ? `<section class="card" aria-labelledby="rv-n"><h3 class="h3" id="rv-n">Worth noting</h3><ul class="rv-notes">${notes.slice(0, 5).map(t => `<li>${esc(t)}</li>`).join("")}</ul></section>` : ""}
     ${bonus}
   </section>`;

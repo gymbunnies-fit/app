@@ -746,6 +746,8 @@ details.more.row-disclosure[open] > summary .ico{transform:rotate(180deg)}
 .set{display:grid;grid-template-columns:44px repeat(3,minmax(0,1fr)) 48px;grid-template-areas:"n w w r r" "del diff diff diff chk";gap:8px;align-items:center;padding:10px 0;border-top:1px solid var(--hair)}
 .set.noweight{grid-template-columns:44px repeat(3,minmax(0,1fr)) 48px;grid-template-areas:"n r r r r" "del diff diff diff chk"}
 .set .set-n{grid-area:n;font-size:1.5rem;color:var(--muted);text-align:center}
+.set .side-tag{display:block;font:700 .7rem/1 var(--body);font-style:normal;letter-spacing:.04em;text-transform:uppercase;color:var(--ink);margin-top:2px}
+.set.side-R{border-top-style:dashed}
 .set .sw-w{grid-area:w} .set .sw-r{grid-area:r}
 .set .set-del{grid-area:del;justify-self:center}
 .set .diff{grid-area:diff;display:grid;grid-template-columns:repeat(3,1fr);gap:4px;background:var(--surface);border:1.5px solid var(--line);border-radius:14px;padding:4px}
@@ -868,6 +870,9 @@ body.shell #main{flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scr
 body.shell nav.tabs{position:relative;flex:none;left:auto;right:auto;bottom:auto}
 body.shell .sticky-cta{bottom:8px}
 body.shell.kb-open{padding-bottom:0}
+/* Installed on iPhone: after the keyboard closes, iOS can leave the fixed page short of the bottom, with a blank
+   band under the tab bar. The installed app always fills the screen, so size it to the screen instead. */
+@media (display-mode:standalone){body.shell:not(.kb-open){bottom:auto;height:100lvh}}
 
 /* feedback */
 .fb-list{list-style:none;margin:0;padding:0;display:grid;gap:10px}

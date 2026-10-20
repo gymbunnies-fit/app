@@ -9,6 +9,17 @@ export function defFor(id, variant, entry = {}) {
   return { name: entry.name || id, sr: ALL_EX[id]?.sr || "", kind: entry.kind || "load", db: !!entry.db, q: entry.name || id };
 }
 
+// Moves done one arm or one leg at a time get a Left and a Right row for every set.
+// Alternating moves (dead bugs, walking lunges) stay as one row.
+export const isSided = name => /single-arm|single-leg|one-arm|cable lateral raise|suitcase carry|split squat|bulgarian|pallof|woodchop|torso rotation|cable hip (abduction|adduction)|step-ups|concentration curl/i.test(String(name || ""));
+// Rows in Left/Right pairs (or plain rows for a two-sided move).
+export function withSides(sets, sided) {
+  if (!sided) return sets.some(x => x.side) ? sets.filter(x => x.side !== "R").map(({ side, ...x }) => x) : sets;
+  if (sets.length && sets.every((x, i) => x.side === (i % 2 ? "R" : "L"))) return sets;
+  return sets.filter(x => x.side !== "R").flatMap(({ side, ...x }) => [{ ...x, side: "L" }, { ...x, done: false, side: "R" }]);
+}
+export const setCount = sets => (sets || []).filter(x => x.side !== "R").length;
+
 export const STEP = 5; // lb increment for weight-bump suggestions
 
 // ---- dates -------------------------------------------------------------
@@ -80,7 +91,7 @@ export function unitLabel(kind, db) {
 
 export function describeSets(kind, db, sets) {
   const u = unitLabel(kind, db);
-  const parts = (sets || []).map(s => (u.w ? `${s.w || 0}×${s.r || 0}` : `${s.r || 0}`));
+  const parts = (sets || []).map(s => (u.w ? `${s.w || 0}×${s.r || 0}` : `${s.r || 0}`) + (s.side ? ` ${s.side}` : ""));
   const tail = u.w ? `${u.w}` : u.r;
   return parts.length ? `${parts.join(", ")} ${tail}` : "—";
 }
@@ -99,12 +110,23 @@ export function topSetText(kind, db, sets) {
 export const userSessions = (sessions, user) =>
   sessions.filter(s => s.user === user).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (a.updatedAt || 0) - (b.updatedAt || 0)));
 
+// What machine or move an entry actually was. The same move can sit in more than one plan slot
+// (Pec Fly is in Week A and Week B; the Week B shoulder press is Week A's "swap"), so history
+// follows the move's name, not just the plan slot it was logged under.
+export const moveKey = (id, variant, entry = {}) => {
+  const v = variant || "std";
+  if (String(v).startsWith("lib:")) return v;
+  return String(defFor(id, v, entry).name || id).trim().toLowerCase().replace(/\s+/g, " ");
+};
+
 // Entries for one exercise (optionally one variant), oldest first.
+// With a variant: every logged set of that same move, from any plan day.
 export function exHistory(sessions, user, exId, variant) {
-  const out = [];
+  const out = []; const key = variant ? moveKey(exId, variant) : null;
   for (const s of userSessions(sessions, user)) for (const e of s.exercises || []) {
-    if (e.id !== exId || e.skipped) continue;
-    if (variant && (e.variant || "std") !== variant) continue;
+    if (e.skipped) continue;
+    if (variant) { if (!(e.id === exId && (e.variant || "std") === variant) && moveKey(e.id, e.variant, e) !== key) continue; }
+    else if (e.id !== exId) continue;
     out.push({ date: s.date, sessionId: s.id, ...e, score: bestScore(e.kind, e.sets) });
   }
   return out;
@@ -167,6 +189,41 @@ export function setsByFocus(sessions, user, from, to) {
     }
   }
   return weeks;
+}
+
+// ---- body areas across a two-week cycle -----------------------------------
+export const AREA_ORDER = ["chest", "shoulders", "arms", "back", "core", "glutes", "legs", "calves"];
+// The area a move is aimed at (its first focus), and the others it also works. Presses and dips also work
+// the triceps, and rows, pulldowns and pull-ups also work the biceps, even when the plan doesn't list arms.
+export function areasOf(name, focus = []) {
+  const n = String(name || "").toLowerCase(); const f = (focus || []).filter(a => AREA_ORDER.includes(a));
+  const main = f[0] || null; const also = new Set(f.slice(1));
+  if (/press|dip|push-?up/.test(n) && (f.includes("chest") || f.includes("shoulders"))) also.add("arms");
+  if (/\brow|pulldown|pull-?up|chin-?up/.test(n) && !/straight-arm/.test(n)) also.add("arms");
+  also.delete(main);
+  return { main, also: [...also] };
+}
+// planned: [{ name, focus, sets }] for every plan day in the cycle. Logged sets come from sessions between from and to.
+export function areaReport(planned, sessions, user, from, to) {
+  const out = Object.fromEntries(AREA_ORDER.map(a => [a, { planMain: 0, planAlso: 0, didMain: 0, didAlso: 0, moves: [] }]));
+  for (const p of planned) {
+    const { main, also } = areasOf(p.name, p.focus);
+    if (main) { out[main].planMain += p.sets; if (!out[main].moves.includes(p.name)) out[main].moves.push(p.name); }
+    for (const a of also) out[a].planAlso += p.sets;
+  }
+  for (const s of userSessions(sessions, user)) {
+    if ((from && s.date < from) || (to && s.date > to)) continue;
+    for (const e of s.exercises || []) {
+      if (e.skipped || !e.sets?.length) continue;
+      const lib = String(e.variant || "").startsWith("lib:");
+      const focus = lib && e.focus?.length ? e.focus : (ALL_EX[e.id]?.focus || e.focus || []);
+      const { main, also } = areasOf(e.name || defFor(e.id, e.variant, e).name, focus);
+      const n = setCount(e.sets);
+      if (main) out[main].didMain += n;
+      for (const a of also) out[a].didAlso += n;
+    }
+  }
+  return out;
 }
 
 // ---- body ---------------------------------------------------------------
@@ -286,9 +343,10 @@ function firstIn(body, user, f, start, end) {
 // "3 sets: 35×12, 35×12, 35×10 lb (R R H)"
 export function setsText(e) {
   const sets = e.sets || []; const u = unitLabel(e.kind, e.db);
-  const vals = sets.map(s => (u.w ? `${s.w || 0}×${s.r || 0}` : `${s.r || 0}`)).join(", ");
+  const vals = sets.map(s => (u.w ? `${s.w || 0}×${s.r || 0}` : `${s.r || 0}`) + (s.side ? ` ${s.side}` : "")).join(", ");
   const felt = sets.map(s => ["", "E", "R", "H"][s.d || 2]).join(" ");
-  return `${sets.length} set${sets.length === 1 ? "" : "s"}: ${vals} ${u.w || u.r} (${felt})`;
+  const n = setCount(sets);
+  return `${n} set${n === 1 ? "" : "s"}${sets.some(s => s.side) ? " each side" : ""}: ${vals} ${u.w || u.r} (${felt})`;
 }
 export function reportText(r) {
   const p = getProfile(r.user);

@@ -294,6 +294,31 @@ for (const b of BUILTIN) {
   eq("app and offline cache versions match", app.match(/APP_VERSION = "(\d+)"/)?.[1], sw.match(/twp-v(\d+)/)?.[1]);
 }
 
+// ---- history follows the move across plan days; one-sided moves; body areas
+{
+  const sess = [{ id: "x", user: "mat", date: "2026-10-12", exercises: [
+    { id: "a-mon-fly", variant: "std", name: "Pec Fly Machine", kind: "load", sets: [{ w: 70, r: 12, d: 2 }] },
+    { id: "a-mon-sp", variant: "swap", name: "Seated Dumbbell Shoulder Press", kind: "load", sets: [{ w: 20, r: 10, d: 2 }] },
+    { id: "b-mon-clat", variant: "std", name: "Cable Lateral Raise", kind: "load", sets: [{ w: 10, r: 12, d: 2, side: "L" }, { w: 10, r: 12, d: 2, side: "R" }] }] }];
+  eq("Week B pec fly sees Week A's pec fly", S.lastTime(sess, "mat", "b-mon-fly", "std")?.sets[0].w, 70);
+  eq("Week B shoulder press sees Week A's swap of the same move", S.lastTime(sess, "mat", "b-mon-sp", "std")?.sets[0].w, 20);
+  eq("a different move stays separate", S.lastTime(sess, "mat", "a-mon-sp", "std"), null);
+  eq("Benny's history isn't Mat's", S.lastTime(sess, "benny", "b-mon-fly", "std"), null);
+  yes("cable lateral raise is one side at a time", S.isSided("Cable Lateral Raise"));
+  yes("dumbbell lateral raise is both arms together", !S.isSided("Dumbbell Lateral Raise"));
+  const w = S.withSides([{ w: 10, r: 12 }, { w: 10, r: 12 }, { w: 10, r: 12 }], true);
+  eq("3 sets become left/right pairs", w.map(x => x.side).join(""), "LRLRLR");
+  eq("pairs count as one set each", S.setCount(w), 3);
+  eq("pairs fold back when the move is two-sided", S.withSides(w, false).length, 3);
+  yes("summary says each side", S.setsText({ kind: "load", db: false, sets: w }).startsWith("3 sets each side"));
+  const a = S.areasOf("Machine Chest Press", ["chest"]);
+  yes("a chest press also works the arms", a.main === "chest" && a.also.includes("arms"));
+  yes("a straight-arm pulldown doesn't count as arm work", !S.areasOf("Straight-Arm Cable Pulldown", ["back"]).also.includes("arms"));
+  const r = S.areaReport([{ name: "Dumbbell Bicep Curl", focus: ["arms"], sets: 3 }, { name: "Lat Pulldown", focus: ["back"], sets: 3 }], sess, "mat", "2026-10-05", "2026-10-18");
+  eq("arms: aimed-at sets", r.arms.planMain, 3); eq("arms: also-works sets", r.arms.planAlso, 3);
+  eq("logged shoulder sets count left/right as one set", r.shoulders.didMain, 2);
+}
+
 // ---- week review and Delete my account
 await (await import("./app-logic.mjs")).run({ dir, here, eq, yes });
 
