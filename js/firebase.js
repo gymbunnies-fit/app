@@ -212,11 +212,21 @@ export async function signOutAndClear() {
 export async function importAll(data) {
   let batch = writeBatch(db), n = 0;
   for (const name of COLLECTIONS) for (const item of data[name] || []) {
+    if (name === "gyms") continue;
     const { id, ...rest } = item;
     batch.set(ref(name, id || doc(col(name)).id), rest);
     if (++n % 400 === 0) { await batch.commit(); batch = writeBatch(db); }
   }
   await batch.commit();
+  // Shared gyms one at a time: a gym keeps the person who shared it, and one the rules refuse doesn't stop the rest.
+  const uid = auth.currentUser?.uid || "";
+  for (const item of data.gyms || []) {
+    const { id, crew, ...rest } = item; void crew;
+    if (!id || !rest.name) continue;
+    const had = await getDoc(ref("gyms", id)).catch(() => null);
+    const owner = had?.exists() ? had.data().owner : uid;
+    try { await setDoc(ref("gyms", id), { ...rest, owner }); n++; } catch (err) { console.warn("Gym not restored", id, err); }
+  }
   return n;
 }
 

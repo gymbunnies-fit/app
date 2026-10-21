@@ -79,9 +79,27 @@ service cloud.firestore {
         allow delete: if signedIn() && (request.auth.uid == uid || crewOwner(crewId));
       }
 
+      // Shared gyms. Any member can update the equipment; only the person who shared it can delete it
+      // (or anyone, once that person has left the crew). Nobody can take over someone else's gym.
+      match /gyms/{gymId} {
+        function okGym(d) {
+          return d.keys().hasOnly(['id', 'name', 'preset', 'items', 'details', 'owner', 'sharedAt', 'createdAt', 'updatedAt'])
+            && d.name is string && d.name.size() > 0 && d.name.size() <= 60
+            && d.owner is string
+            && (!('items' in d) || (d.items is list && d.items.size() <= 300))
+            && (!('details' in d) || (d.details is map && d.details.size() <= 30))
+            && (!('preset' in d) || (d.preset is string && d.preset.size() <= 30));
+        }
+        allow read: if member(crewId);
+        allow create: if member(crewId) && request.resource.data.owner == request.auth.uid && okGym(request.resource.data);
+        allow update: if member(crewId) && request.resource.data.owner == resource.data.owner && okGym(request.resource.data);
+        allow delete: if member(crewId) && (resource.data.owner == request.auth.uid
+          || !exists(/databases/$(database)/documents/crews/$(crewId)/members/$(resource.data.owner)));
+      }
+
       // Workouts, body entries, library, profiles, settings, high-fives: any member can read and write.
       match /{coll}/{docId} {
-        allow read, write: if coll != 'members' && member(crewId);
+        allow read, write: if coll != 'members' && coll != 'gyms' && member(crewId);
       }
     }
   }

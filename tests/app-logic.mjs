@@ -182,4 +182,14 @@ export const cyclePlan = () => [];
   eq("reauth: a wrong password gets a plain message", msg, "That email and password don't match. Try again, or use Forgot password.");
   fakeAuth.currentUser = null; msg = ""; try { await FB.reauth(null); } catch (e) { msg = e.message; }
   eq("reauth: signed out", msg, "You're signed out. Sign in again first.");
+
+  // Restoring a backup: shared gyms keep whoever shared them, and new ones belong to the person restoring.
+  seed({ "crews/c1/gyms/g1": { name: "Kirkwood", owner: "u2", items: ["a"] } }); fakeAuth.currentUser = { uid: "u1" };
+  FB.connect("c1", () => {}, () => {});
+  const nRestored = await FB.importAll({ sessions: [{ id: "s1", user: "mat" }],
+    gyms: [{ id: "g1", name: "Kirkwood", owner: "u1", crew: true, items: ["a", "b"] }, { id: "g2", name: "Hotel", owner: "u9", items: [] }, { name: "no id" }] });
+  eq("restore: counts sessions and gyms", nRestored, 3);
+  eq("restore: an existing gym keeps its owner", docs.get("crews/c1/gyms/g1").owner, "u2");
+  eq("restore: a new gym belongs to the restorer", docs.get("crews/c1/gyms/g2").owner, "u1");
+  yes("restore: the app-only crew flag isn't saved", !("crew" in docs.get("crews/c1/gyms/g1")));
 }

@@ -180,7 +180,9 @@ function findBySig(root, s) {
   const sel = s.act ? `[data-act="${CSS.escape(s.act)}"]` + (s.v ? `[data-v="${CSS.escape(s.v)}"],[data-act="${CSS.escape(s.act)}"][data-u="${CSS.escape(s.v)}"],[data-act="${CSS.escape(s.act)}"][data-n="${CSS.escape(s.v)}"]` : "")
     : s.f ? `input[data-f="${CSS.escape(s.f)}"]` : s.view ? `[data-view="${CSS.escape(s.view)}"]` : "";
   if (!sel) return null;
-  return scope.querySelector(sel) || (s.act ? scope.querySelector(`[data-act="${CSS.escape(s.act)}"]`) : null);
+  // The same action can sit on a drawing (an SVG path, not focusable) and on a real button: prefer the same kind of element.
+  const hits = [...scope.querySelectorAll(sel)];
+  return hits.find(el => el.tagName === s.tag) || hits[0] || (s.act ? scope.querySelector(`[data-act="${CSS.escape(s.act)}"]`) : null);
 }
 // Call after the main view redraws. If focus fell off the page, put it back on the same control.
 export function restoreFocus(root) {
