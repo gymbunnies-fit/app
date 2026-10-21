@@ -194,6 +194,15 @@ export function save(name, id, data) {
   return id;
 }
 export function remove(name, id) { deleteDoc(ref(name, id)).catch(err => console.error("Delete failed", err)); }
+// Many records at once (history brought in from another app, or taking it back out). Waits for the server.
+export async function saveMany(name, items) {
+  for (let i = 0; i < items.length; i += 400) {
+    const b = writeBatch(db); items.slice(i, i + 400).forEach(({ id, ...data }) => b.set(ref(name, id), { ...data, updatedAt: Date.now() })); await b.commit();
+  }
+}
+export async function removeMany(name, ids) {
+  for (let i = 0; i < ids.length; i += 400) { const b = writeBatch(db); ids.slice(i, i + 400).forEach(id => b.delete(ref(name, id))); await b.commit(); }
+}
 // Merge only the given fields, so two phones changing different parts of the same record don't overwrite each other.
 export function patch(name, id, data) {
   setDoc(ref(name, id), { ...data, updatedAt: Date.now() }, { merge: true }).catch(err => console.error("Save failed", err));

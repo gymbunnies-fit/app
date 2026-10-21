@@ -1011,3 +1011,26 @@ body.a11y-focusRing [tabindex="-1"]:focus:not(:focus-visible){outline:none!impor
 .gym-pick{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .gym-pick label{font-weight:600}
 .gym-pick select{flex:1;min-width:0;width:auto}
+
+/* Log it after */
+.start-row{display:grid;gap:8px}
+.after-btn{min-height:48px;border-radius:999px}
+.aft-ex{border:1px solid var(--line, rgba(0,0,0,.12));margin:0 0 12px}
+.aft-ex.off{opacity:.75}
+.aft-legend{padding:0 4px;font-size:1rem}
+.aft-legend .check{display:flex;align-items:center;gap:10px;min-height:44px}
+.aft-legend input[type=checkbox]{width:24px;height:24px}
+.aft-set{display:grid;grid-template-columns:3.6em 1fr 1fr;gap:8px;align-items:center;margin:6px 0}
+.aft-set:has(> .aft-f:only-of-type){grid-template-columns:3.6em 1fr}
+.aft-n{font-size:.875rem;color:var(--muted)}
+.aft-f,.aft-min{display:flex;align-items:center;gap:6px}
+.aft-f input,.aft-min input{width:100%;min-height:44px;font-size:1.0625rem}
+.aft-f span,.aft-min span{font-size:.875rem;color:var(--muted);white-space:nowrap}
+.aft-min input{max-width:7em}
+/* Bring in your history */
+.imp-list{list-style:none;padding:0;margin:0;display:grid;gap:10px}
+.imp-row .field select{width:100%;min-height:44px}
+.imp-show{list-style:none;padding:0;display:grid;gap:10px}
+.imp-unit{border:0;padding:0;margin:0 0 8px}
+.imp-unit legend{padding:0;margin-bottom:6px}
+label.btn:focus-within{outline:2px solid var(--accent);outline-offset:2px}

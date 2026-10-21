@@ -119,8 +119,8 @@ function progHistory() {
   if (!ss.length) return `<section class="card"><p class="muted">No workouts logged yet.</p></section>`;
   return `<section class="card">${ss.slice(0, 60).map(s => {
     const n = (s.exercises || []).filter(e => !e.skipped && e.sets?.length).length;
-    return `<div class="list-item"><div><b>${S.fmtDate(s.date)}</b> · Week ${esc(s.week)} ${esc(dayName(s.day))}<div class="small muted">${n} exercises${s.cardio?.done ? ` · ${esc(s.cardio.type)} ${s.cardio.minutes || 0} min` : ""}</div></div>
-      <div class="row"><button class="btn small" data-act="openDay" data-id="${s.id}">Open</button><button class="btn small danger" data-act="delSession" data-id="${s.id}">${state.confirmDel === s.id ? "Confirm" : "Delete"}</button></div></div>`;
+    return `<div class="list-item"><div><b>${S.fmtDate(s.date)}</b> · ${s.imported ? `From ${esc(s.importedFrom || "another app")}${s.title ? `: ${esc(s.title)}` : ""}` : `Week ${esc(s.week)} ${esc(dayName(s.day))}`}<div class="small muted">${n} exercises${s.cardio?.done ? ` · ${esc(s.cardio.type)} ${s.cardio.minutes || 0} min` : ""}</div></div>
+      <div class="row"><button class="btn small" data-act="${s.imported ? "impOpen" : "openDay"}" data-id="${s.id}">Open</button><button class="btn small danger" data-act="delSession" data-id="${s.id}">${state.confirmDel === s.id ? "Confirm" : "Delete"}</button></div></div>`;
   }).join("")}</section>`;
 }
 

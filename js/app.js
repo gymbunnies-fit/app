@@ -19,13 +19,15 @@ import { afterRender, cssVar, destroyCharts, viewProgress } from "./views/progre
 import { OB_STEPS, drawOnboarding, finishOnboarding, openOnboarding, shareLink } from "./views/questionnaire.js";
 import { deleteMyAccount, openSettings } from "./views/settings.js";
 import { onGymChange, onGymClick, onGymInput } from "./views/gyms.js";
+import { onImpChange, onImpClick } from "./views/import.js";
+import { onAfterClick, onAfterInput } from "./views/after.js";
 import { strFinish, strGo, strRoutine, strState, viewStretch } from "./views/stretch.js";
 import { ev, isAdmin, track, trackSeen } from "./views/usage.js";
 import { focusSaved, openKey, stretchBox, viewToday } from "./views/workout.js";
 
 // ---------------------------------------------------------------- helpers
 // Shown at the bottom of Settings so you can tell whether a phone has the latest update. Bump with sw.js VERSION.
-const APP_VERSION = "59";
+const APP_VERSION = "60";
 // The app's name lives here only (plus app-v41.webmanifest and the <title> tags in index.html, which can't read JS).
 const APP_NAME = "GymBunnies.fit";
 const $ = (s, r = document) => r.querySelector(s);
@@ -897,8 +899,12 @@ function warmupCard(u, date, s, list) {
 let elapsedTick;
 function workoutBar(u, date, s) {
   clearInterval(elapsedTick);
-  if (date !== TODAY() && !s?.startedAt) return "";
-  if (!s?.startedAt) return `<button class="btn primary block start-btn" data-act="startWorkout">${play(18)}Start workout</button>`;
+  // Something on the day still unsaved: offer to log the whole thing in one go (no clock).
+  const left = !s?.finishedAt && todaysList(u, date).some(x => !s?.exercises?.some(e => e.id === x.ex.id && e.sets?.length));
+  const after = left ? `<button class="btn block after-btn" data-act="aftOpen">Log it after</button>` : "";
+  if (s?.finishedAt && !s.startedAt) { const dur = S.workoutDuration(s); return `<div class="timerbar"><span>${dur ? `Logged after · <b class="mono">${fmtDur(dur)}</b>` : "<b>Logged after</b>"}</span><button class="btn small" data-act="showSummary">Summary</button></div>`; }
+  if (date !== TODAY() && !s?.startedAt) return after;
+  if (!s?.startedAt) return `<div class="start-row"><button class="btn primary block start-btn" data-act="startWorkout">${play(18)}Start workout</button>${after}</div>`;
   if (!s.finishedAt) {
     elapsedTick = setInterval(() => { const el = $("#elapsed"); if (el) el.textContent = fmtDur(Date.now() - s.startedAt); else clearInterval(elapsedTick); }, 1000);
     return `<div class="timerbar"><span>Workout time <b class="mono" id="elapsed">${fmtDur(Date.now() - s.startedAt)}</b></span><button class="btn small primary" data-act="finishWorkout">Finish workout</button></div>`;
@@ -1145,6 +1151,32 @@ function saveExercise(c) {
   if (isPR) celebrate("pr", sayV("pr", { name: def.name }, c.u), sk ? F.plain("pr", { name: def.name }) : null);
   else celebrate("save", sayV("saveEx", { name: def.name }, c.u), sk ? F.plain("saveEx", { name: def.name }) : null);
 }
+// "Log it after": every exercise from one screen, saved together, without the workout clock.
+// items: [{ ex, added, on, variant, sets }]. Returns a message about what's wrong, or "" once saved.
+function logAfter(u, date, items, minutes) {
+  const ex = {}; const planOrder = todaysList(u, date).map(x => x.ex.id); let isPR = false, sets = 0;
+  for (const it of items.filter(x => x.on)) {
+    const def = defOf(it.ex, it.variant);
+    const ss = it.sets.map(s => ({ w: +s.w || 0, r: +s.r || 0, d: +s.d || 2, ...(s.side ? { side: s.side } : {}) })).filter(s => s.r > 0 || s.w > 0);
+    if (!ss.length) return `${def.name} has no sets filled in. Fill one in, or untick it if you skipped it.`;
+    if ((def.kind === "load" || def.kind === "carry") && ss.some(s => !s.w)) return `${def.name} has a set with no weight. Fill it in or remove that set.`;
+    const prev = S.personalBest(state.data.sessions.filter(x => x.date < date), u, it.ex.id, it.variant);
+    if (prev && S.betterThan(def.kind, S.bestScore(def.kind, ss), prev.score)) isPR = true;
+    const i = planOrder.indexOf(it.ex.id);
+    ex[it.ex.id] = { id: it.ex.id, variant: it.variant, name: def.name, kind: def.kind, db: !!def.db, sets: ss, order: i >= 0 ? i : 100 + planOrder.length, ...(it.added ? { added: true } : {}), ...(def.focus ? { focus: def.focus } : {}) };
+    sets += ss.length;
+  }
+  const n = Object.keys(ex).length;
+  if (!n) return "Tick at least one exercise you did.";
+  const s = sessionFor(u, date);
+  const m = Math.round(+minutes || 0);
+  writeSession(u, date, { ex, finishedAt: s?.finishedAt || Date.now(), loggedAfter: true, ...(m > 0 && m <= 300 ? { minutes: m } : {}) });
+  track({ exercises: n, sets });
+  for (const id of Object.keys(ex)) { store.del(dKey(u, date, id)); state.editing.delete(editKey(u, date, id)); }
+  store.set(xKey(u, date), getExtras(u, date).filter(x => !ex[x.id]));
+  setTimeout(() => { openSummary(u, date); celebrate(isPR ? "pr" : "finish"); }, 120);
+  return "";
+}
 function saveCardio(skip) {
   const u = LU(), date = LD(); const form = $("#cardio-form");
   const val = k => form.querySelector(`[data-cf="${k}"]`);
@@ -1246,6 +1278,8 @@ document.addEventListener("click", e => {
   const act = el.dataset.act; const v = el.dataset.v;
   ev(`t_${act}`);
   if (act.startsWith("gym") && onGymClick(act, el)) return;
+  if (act.startsWith("imp") && onImpClick(act, el)) return;
+  if (act.startsWith("aft") && onAfterClick(act, el)) return;
   switch (act) {
     case "newProfile": openOnboarding(null); break;
     case "obRetake": openOnboarding(state.user); break;
@@ -1635,6 +1669,7 @@ document.getElementById("gear").addEventListener("click", openSettings);
 
 document.addEventListener("input", e => {
   if (onGymInput(e.target)) return;
+  if (onAfterInput(e.target)) return;
   const el = e.target;
   if (el.dataset.f === "w" || el.dataset.f === "r") {
     const c = cardFor(el); if (!c) return;
@@ -1667,6 +1702,7 @@ document.addEventListener("change", e => {
   const el = e.target; const act = el.dataset.act;
   if (act || el.dataset.a11y || el.dataset.gym) ev(`c_${act || (el.dataset.a11y ? `a11y_${el.dataset.a11y}` : "gym")}`);
   if ((act || el.dataset.gymd) && onGymChange(el)) return;
+  if (act?.startsWith("imp") && onImpChange(el)) return;
   if (act === "progEx") { state.progEx = el.value; render(); }
   if (act === "pickGym") {
     const u = LU(), date = LD(), k = homeKey(u, date), cur = sessionFor(u, date);
@@ -1876,7 +1912,7 @@ if ("serviceWorker" in navigator) {
 // ---------------------------------------------------------------- updates
 // Every time the app opens (or comes back to the front), ask the server which version is live.
 // If it's newer than this copy, throw the old copy away and reload. No buttons needed.
-const SHELL_FILES = ["./", "index.html", "css/styles.css", "js/app.js", "js/plan.js", "js/stats.js", "js/firebase.js", "js/library.js", "js/fun.js", "js/safety.js", "js/timer.js", "js/a11y.js", "js/icons.js", "js/tailor.js", "js/program.js", "js/stretch.js", "js/anatomy.js", "js/equipment.js", "js/muscles.js", "js/views/areas.js", "js/views/bodymap.js", "js/views/body.js", "js/views/crew.js", "js/views/feedback.js", "js/views/gyms.js", "js/views/progress.js", "js/views/questionnaire.js", "js/views/review.js", "js/views/settings.js", "js/views/stretch.js", "js/views/usage.js", "js/views/workout.js", "app-v41.webmanifest", "sw.js"];
+const SHELL_FILES = ["./", "index.html", "css/styles.css", "js/app.js", "js/plan.js", "js/stats.js", "js/firebase.js", "js/library.js", "js/fun.js", "js/safety.js", "js/timer.js", "js/a11y.js", "js/icons.js", "js/tailor.js", "js/program.js", "js/stretch.js", "js/anatomy.js", "js/equipment.js", "js/muscles.js", "js/views/areas.js", "js/views/bodymap.js", "js/views/body.js", "js/views/crew.js", "js/views/feedback.js", "js/views/gyms.js", "js/views/import.js", "js/views/after.js", "js/importer.js", "js/views/progress.js", "js/views/questionnaire.js", "js/views/review.js", "js/views/settings.js", "js/views/stretch.js", "js/views/usage.js", "js/views/workout.js", "app-v41.webmanifest", "sw.js"];
 async function liveVersion() {
   try { const r = await fetch(`sw.js?check=${Date.now()}`, { cache: "no-store" }); const m = /VERSION = "twp-v(\d+)"/.exec(await r.text()); return m ? m[1] : null; } catch { return null; }
 }
@@ -1906,4 +1942,4 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 try { const from = sessionStorage.getItem("twp-updated-from"); if (from) { sessionStorage.removeItem("twp-updated-from"); setTimeout(() => toast(from === APP_VERSION ? `Up to date: version ${APP_VERSION}.` : `Updated to version ${APP_VERSION}.`), 800); } } catch { /* ignore */ }
 
 // Shared with the screens in js/views/.
-export { $, APP_VERSION, allGyms, crewGyms, currentGym, gymById, newGymId, saveMyGyms, updateGym, AVATARS, DIFF, FUN_LEVELS, GROUPS, LD, LU, P, PROFILES, PROFILE_DEFAULTS, THEMES, TODAY, VARIANT_NOTE, a11yOn, aches, autoSel, avatarHtml, baseDay, bonusDates, bonusPickFor, bonusPicker, canSee, cardioProgram, closeOverlay, conflicts, crewCard, crewSettings, cyclePlan, cycleStart, dayEdits, dayName, dayStatus, dayTitle, daysFor, defOf, deloadActive, deloadOf, deloadSuggestion, editKey, esc, funAt, funHeader, getDraft, gymSet, isHome, libItem, listText, nextPlanDay, other, otherSlotOn, paceOf, personToggle, planDay, planEditBox, profileIds, reminders, render, resolveEx, ring, riskBlock, saveProfile, seg, sessionFor, shareOf, slotDate, slotKey, slug, srFor, state, stopAll, store, supersetIdeas, toast, todaysList, vLabel, variantOf, warmupCard, workoutBar, yt, ytStretch };
+export { $, APP_VERSION, logAfter, allGyms, crewGyms, currentGym, gymById, newGymId, saveMyGyms, updateGym, AVATARS, DIFF, FUN_LEVELS, GROUPS, LD, LU, P, PROFILES, PROFILE_DEFAULTS, THEMES, TODAY, VARIANT_NOTE, a11yOn, aches, autoSel, avatarHtml, baseDay, bonusDates, bonusPickFor, bonusPicker, canSee, cardioProgram, closeOverlay, conflicts, crewCard, crewSettings, cyclePlan, cycleStart, dayEdits, dayName, dayStatus, dayTitle, daysFor, defOf, deloadActive, deloadOf, deloadSuggestion, editKey, esc, funAt, funHeader, getDraft, gymSet, isHome, libItem, listText, nextPlanDay, other, otherSlotOn, paceOf, personToggle, planDay, planEditBox, profileIds, reminders, render, resolveEx, ring, riskBlock, saveProfile, seg, sessionFor, shareOf, slotDate, slotKey, slug, srFor, state, stopAll, store, supersetIdeas, toast, todaysList, vLabel, variantOf, warmupCard, workoutBar, yt, ytStretch };

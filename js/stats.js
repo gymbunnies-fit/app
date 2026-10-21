@@ -23,6 +23,8 @@ export const setCount = sets => (sets || []).filter(x => x.side !== "R").length;
 // How long a workout took, or null when it was clearly logged after the fact (all at once, minutes apart)
 // or the timer was left running.
 export function workoutDuration(s) {
+  // How long they said it took (logged after, or brought in from another app) beats the clock.
+  if (s?.minutes > 0 && s.minutes <= 300) return Math.round(s.minutes) * 60e3;
   if (!s?.startedAt || !s?.finishedAt) return null;
   const d = s.finishedAt - s.startedAt, n = (s.exercises || []).filter(e => e.sets?.length).length;
   if (d <= 0 || d > 5 * 3600e3 || d < 10 * 60e3 || d < n * 2 * 60e3) return null;
@@ -371,7 +373,7 @@ export function reportText(r) {
   L.push("");
   L.push("EVERY WORKOUT THIS CYCLE (weight × reps per set, felt E/R/H = easy/right/hard):");
   for (const d of r.detail) {
-    L.push(`${d.date} — Week ${d.week} ${DN[d.day] || d.day}:`);
+    L.push(d.day === "Imported" ? `${d.date} — brought in from another app:` : `${d.date} — Week ${d.week} ${DN[d.day] || d.day}:`);
     for (const e of d.exercises) L.push(`- ${e.name}${e.variant === "hard" ? " (harder)" : e.variant === "swap" ? " (swap)" : String(e.variant).startsWith("lib:") ? ` (library swap for ${ALL_EX[e.id]?.n || "planned exercise"})` : e.added ? " (added)" : ""}: ${setsText(e)}`);
     if (d.cardio) L.push(`- Cardio: ${d.cardio.type || "?"}, ${d.cardio.minutes || 0} min${d.cardio.miles ? `, ${d.cardio.miles} mi` : ""}${d.cardio.avgHr ? `, avg HR ${d.cardio.avgHr}` : ""}${d.cardio.hiit ? ", intervals" : ""}`);
     if (d.notes) L.push(`- Notes: ${d.notes}`);

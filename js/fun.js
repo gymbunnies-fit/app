@@ -121,11 +121,15 @@ export function streaks(sessions, user, today, need = 3, extra = []) {
 }
 
 // Every time a set beat the previous best for that exercise and version.
+// History brought in from another app sets the bar (by the move's name) but never counts as a new record itself.
 export function prEvents(sessions, user) {
-  const best = new Map(), out = [];
+  const best = new Map(), imported = new Map(), out = [];
   for (const s of S.userSessions(sessions, user)) for (const e of s.exercises || []) {
     if (e.skipped || !e.sets?.length) continue;
-    const k = `${e.id}|${e.variant || "std"}`; const sc = S.bestScore(e.kind, e.sets);
+    const sc = S.bestScore(e.kind, e.sets), mk = S.moveKey(e.id, e.variant, e);
+    if (s.imported) { if (!imported.has(mk) || S.betterThan(e.kind, sc, imported.get(mk))) imported.set(mk, sc); continue; }
+    const k = `${e.id}|${e.variant || "std"}`;
+    if (!best.has(k) && imported.has(mk)) best.set(k, imported.get(mk));
     if (best.has(k) && S.betterThan(e.kind, sc, best.get(k))) out.push({ date: s.date, name: e.name, id: e.id });
     if (!best.has(k) || S.betterThan(e.kind, sc, best.get(k))) best.set(k, sc);
   }
@@ -135,7 +139,7 @@ export function prEvents(sessions, user) {
 // ---------------------------------------------------------------- points & levels (Full fun level)
 export const LEVELS = ["Rookie", "Regular", "Grinder", "Iron", "Steel", "Titan", "Beast", "Legend", "Mythic", "Immortal"];
 export function points(sessions, activities, user, from, to) {
-  let p = 0; const ss = S.userSessions(sessions, user).filter(s => (!from || s.date >= from) && (!to || s.date <= to));
+  let p = 0; const ss = S.userSessions(sessions, user).filter(s => !s.imported && (!from || s.date >= from) && (!to || s.date <= to));
   for (const s of ss) {
     p += (s.exercises || []).filter(e => !e.skipped && e.sets?.length).length * 10;
     if (s.cardio?.done) p += 15; if (s.checkin || s.pain) p += 5; if (s.warmup) p += 5; if (s.finishedAt) p += 20;

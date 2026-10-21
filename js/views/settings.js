@@ -7,6 +7,7 @@ import { cssVar } from "./progress.js";
 import { ev, isAdmin } from "./usage.js";
 import { deleteEverything, reauth } from "../firebase.js";
 import { myGymsCard } from "./gyms.js";
+import { importCard } from "./import.js";
 
 // ---------------------------------------------------------------- settings
 // ---------------------------------------------------------------- delete my account
@@ -98,6 +99,7 @@ function openSettings() {
       <p class="small"><b>Android:</b> open it in Chrome, tap the ⋮ menu, then Install app.</p><p class="small muted">App version ${APP_VERSION}. If a fix isn't showing up, close the app completely (swipe it away) and open it again.</p></section>
     <section class="card"><h3 class="h3">Backup</h3>
       <div class="row"><button class="btn" data-act="export">Download backup</button><label class="btn">Restore backup<input type="file" accept="application/json" data-act="import" hidden></label></div></section>
+    ${importCard()}
       ${delAcctCard()}
   </div></div>`;
 }

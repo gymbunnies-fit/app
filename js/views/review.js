@@ -14,7 +14,7 @@ const sessDone = x => (x.exercises || []).some(e => e.sets?.length) || x.markedD
 const minsText = m => (m >= 60 ? `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m` : `${m} min`);
 const sessMinutes = x => { const d = S.workoutDuration(x); return d ? Math.round(d / 60000) : 0; };
 function weekRange(week) { const from = slotDate(week, "Mon"); return { from, to: S.addDays(from, 6) }; }
-function weekSessionsOf(u, from, to) { return state.data.sessions.filter(x => x.user === u && x.date >= from && x.date <= to && sessDone(x)); }
+function weekSessionsOf(u, from, to) { return state.data.sessions.filter(x => x.user === u && !x.imported && x.date >= from && x.date <= to && sessDone(x)); }
 // Should this week show its review? Past weeks always; this week once every day is done and nothing from today is still in progress.
 function reviewState(u, week) {
   const { from, to } = weekRange(week);

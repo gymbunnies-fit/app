@@ -399,6 +399,63 @@ for (const b of BUILTIN) {
 }
 
 // ---- week review and Delete my account
+// ---- bringing history in from Strong and Hevy
+{
+  const I = await import(join(dir, "importer.js"));
+  const strong = [
+    '"Date","Workout Name","Duration","Exercise Name","Set Order","Weight","Reps","Distance","Seconds","Notes","Workout Notes","RPE"',
+    '"2025-03-04 18:05:11","Push, ""heavy""","1h 5m","Bench Press (Barbell)","W","45","10","","","","",""',
+    '"2025-03-04 18:05:11","Push, ""heavy""","1h 5m","Bench Press (Barbell)","1","135","8","","","","","9"',
+    '"2025-03-04 18:05:11","Push, ""heavy""","1h 5m","Bench Press (Barbell)","2","135","7","","","","","6"',
+    '"2025-03-04 18:05:11","Push, ""heavy""","1h 5m","Plank","1","0","0","","45","","",""',
+    '"2025-03-04 18:05:11","Push, ""heavy""","1h 5m","Running (Treadmill)","1","0","0","2.1","1200","","",""',
+    '"2025-03-04 18:05:11","Push, ""heavy""","1h 5m","Bench Press (Barbell)","Rest Timer","0","0","","90","","",""',
+    '"2025-03-06 07:00:00","Pull","45m","Lat Pulldown (Cable)","1","100","10","","","multi\nline","",""',
+  ].join("\r\n");
+  const p = I.parseCSV(strong);
+  eq("import: header read", p.header.length, 12);
+  eq("import: quoted commas and doubled quotes", p.rows[0].workoutname, 'Push, "heavy"');
+  eq("import: a newline inside quotes stays in the cell", p.rows[6].notes, "multi\nline");
+  eq("import: Strong found, unit unknown", I.detect(p.header), { format: "Strong", unit: null });
+  let r = I.toWorkouts(p, "lb");
+  eq("import: two workouts", r.workouts.map(w => [w.date, w.minutes]), [["2025-03-04", 65], ["2025-03-06", 45]]);
+  eq("import: warm-up left out, cardio left out", [r.skipped.warmups, r.skipped.cardio], [1, 1]);
+  eq("import: sets in order with how they felt", r.workouts[0].exercises[0].sets, [{ w: 135, r: 8, d: 3 }, { w: 135, r: 7, d: 1 }]);
+  eq("import: timed hold", [r.workouts[0].exercises[1].kind, r.workouts[0].exercises[1].sets[0].r], ["time", 45]);
+  r = I.toWorkouts(p, "kg");
+  eq("import: kilograms to pounds, to the half pound", r.workouts[0].exercises[0].sets[0].w, 297.5);
+  const semi = I.parseCSV('"Workout #";"Date";"Workout Name";"Duration (sec)";"Exercise Name";"Set Order";"Weight (kg)";"Reps";"RPE";"Distance (meters)";"Seconds";"Notes";"Workout Notes"\n"1";"2025-04-29 12:00:00";"Chest";"600";"Bench Press (Barbell)";"1";"100.0";"10";"";"";"";"";""');
+  eq("import: semicolons and a kg column", [I.detect(semi.header).unit, I.toWorkouts(semi).workouts[0].exercises[0].sets[0].w, I.toWorkouts(semi).workouts[0].minutes], ["kg", 220.5, 10]);
+  const hevy = I.parseCSV(['"title","start_time","end_time","description","exercise_title","superset_id","exercise_notes","set_index","set_type","weight_lbs","reps","distance_miles","duration_seconds","rpe"',
+    '"Legs","12 Sep 2024, 07:30","12 Sep 2024, 08:40","","Leg Press (Machine)","","","0","warmup","90","12","","",""',
+    '"Legs","12 Sep 2024, 07:30","12 Sep 2024, 08:40","","Leg Press (Machine)","","","1","normal","180","10","","",""',
+    '"Legs","12 Sep 2024, 07:30","12 Sep 2024, 08:40","","Pull Up (Assisted)","","","0","normal","50","8","","",""'].join("\n"));
+  const h = I.toWorkouts(hevy);
+  eq("import: Hevy found, in pounds", I.detect(hevy.header), { format: "Hevy", unit: "lb" });
+  eq("import: Hevy workout, length from start and end", [h.workouts[0].date, h.workouts[0].minutes, h.skipped.warmups], ["2024-09-12", 70, 1]);
+  eq("import: assisted move", h.workouts[0].exercises[1].kind, "assist");
+  eq("import: dates", [I.parseWhen("2025-01-02 3:04").date, I.parseWhen("Jan 5, 2025, 2:00 PM").date, I.parseWhen("3/9/2025 10:00").date, I.parseWhen("nope")], ["2025-01-02", "2025-01-05", "2025-03-09", null]);
+  eq("import: lengths", [I.parseMinutes("1h 5m"), I.parseMinutes("45m"), I.parseMinutes("3600"), I.parseMinutes("1:10:00"), I.parseMinutes("")], [65, 45, 60, 70, null]);
+  const top = n => I.matchMove(n)[0];
+  eq("import: Strong names match the app's", ["Bench Press (Barbell)", "Chest Press (Machine)", "Lat Pulldown (Cable)", "Bicep Curl (Dumbbell)"].map(n => [top(n).name, top(n).sure]),
+    [["Barbell Bench Press", true], ["Machine Chest Press", true], ["Lat Pulldown", true], ["Dumbbell Bicep Curl", true]]);
+  yes("import: different equipment is never a sure match", !I.matchMove("Bench Press (Dumbbell)").some(m => m.sure && /barbell/i.test(m.name)));
+  eq("import: unknown moves have no sure match", I.matchMove("Zercher Good Morning")[0]?.sure || false, false);
+  const ex = I.entriesFor(r.workouts[0], { "Bench Press (Barbell)": "Barbell Bench Press" });
+  const bench = Object.values(ex).find(e => e.from);
+  eq("import: entry takes the app's name and keeps where it came from", [bench.name, bench.from, bench.variant.startsWith("lib:")], ["Barbell Bench Press", "Bench Press (Barbell)", true]);
+  eq("import: history connects by the move", S.moveKey(bench.id, bench.variant, bench), bench.variant);
+  // Records and points: imported history sets the bar but earns nothing.
+  const sess = [
+    { user: "mat", date: "2025-01-01", imported: true, exercises: [{ id: "imp:barbell-bench-press", name: "Barbell Bench Press", variant: "std", kind: "load", sets: [{ w: 200, r: 5 }] }] },
+    { user: "mat", date: "2026-10-01", exercises: [{ id: "x1", name: "Barbell Bench Press", variant: "std", kind: "load", sets: [{ w: 150, r: 5 }] }] },
+    { user: "mat", date: "2026-10-08", exercises: [{ id: "x1", name: "Barbell Bench Press", variant: "std", kind: "load", sets: [{ w: 210, r: 5 }] }] },
+  ];
+  eq("import: a lighter first time isn't a record; beating history is", F.prEvents(sess, "mat").map(e => e.date), ["2026-10-08"]);
+  eq("import: imported days earn no points", F.points(sess.slice(0, 1), [], "mat"), 0);
+  eq("import: a stated length counts as the workout time", [S.workoutDuration({ minutes: 50 }), S.workoutDuration({ minutes: 900 })], [50 * 60e3, null]);
+}
+
 await (await import("./app-logic.mjs")).run({ dir, here, eq, yes });
 
 console.log(`\n${pass} passed, ${fail} failed`);
