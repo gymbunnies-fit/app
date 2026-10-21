@@ -357,11 +357,14 @@ for (const b of BUILTIN) {
 // ---- workout time: hidden when the workout was logged after the fact
 {
   const ex = n => Array.from({ length: n }, (_, i) => ({ id: "e" + i, sets: [{ w: 10, r: 10 }] }));
-  eq("a real 50-minute workout shows its time", S.workoutDuration({ startedAt: 0, finishedAt: 50 * 60e3, exercises: ex(6) }), 50 * 60e3);
-  eq("6 exercises logged in 4 minutes hides the time", S.workoutDuration({ startedAt: 0, finishedAt: 4 * 60e3, exercises: ex(6) }), null);
-  eq("6 exercises in 11 minutes is still too fast to be real", S.workoutDuration({ startedAt: 0, finishedAt: 11 * 60e3, exercises: ex(6) }), null);
-  eq("a timer left running overnight hides the time", S.workoutDuration({ startedAt: 0, finishedAt: 9 * 3600e3, exercises: ex(6) }), null);
-  eq("no finish, no time", S.workoutDuration({ startedAt: 0 }), null);
+  const t0 = Date.UTC(2026, 9, 20, 22, 0);
+  const w = (mins, n = 6) => S.workoutDuration({ startedAt: t0, finishedAt: t0 + mins * 60e3, exercises: ex(n) });
+  eq("a real 50-minute workout shows its time", w(50), 50 * 60e3);
+  eq("6 exercises logged in 4 minutes hides the time", w(4), null);
+  eq("6 exercises in 11 minutes is still too fast to be real", w(11), null);
+  eq("a short real workout with 2 exercises shows its time", w(15, 2), 15 * 60e3);
+  eq("a timer left running overnight hides the time", w(9 * 60), null);
+  eq("no finish, no time", S.workoutDuration({ startedAt: t0 }), null);
 }
 
 // ---- week review and Delete my account
