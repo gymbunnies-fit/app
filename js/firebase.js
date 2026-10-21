@@ -1,16 +1,16 @@
 // Firebase: sign-in (Google or email + password) and crew-scoped data with an offline cache.
 // Data lives under crews/{crewId}/{collection}/{doc}. See README for the security rules.
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
 import {
   getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
   signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut, updateProfile,
   linkWithPopup, linkWithCredential, EmailAuthProvider, reauthenticateWithPopup, reauthenticateWithCredential, deleteUser
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   collection, doc, setDoc, getDoc, getDocs, deleteDoc, onSnapshot, writeBatch, updateDoc, deleteField, FieldPath, terminate, clearIndexedDbPersistence,
   increment, arrayUnion, addDoc, query, where
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyC1RgJvqEyg8-HvVvNmQrSQkUnpPIkIG5k",
