@@ -27,7 +27,7 @@ const db = initializeFirestore(app, { localCache: persistentLocalCache({ tabMana
 const google = new GoogleAuthProvider();
 google.setCustomParameters({ prompt: "select_account" });
 
-export const COLLECTIONS = ["sessions", "body", "activities", "settings", "library", "profiles", "pings"];
+export const COLLECTIONS = ["sessions", "body", "activities", "settings", "library", "profiles", "pings", "gyms"];
 let crewId = null;
 const col = name => collection(db, "crews", crewId, name);
 const ref = (name, id) => doc(db, "crews", crewId, name, id);
@@ -205,7 +205,7 @@ export function dropField(name, id, path) {
 // Sign out and wipe this phone's cached copy of the crew's data.
 export async function signOutAndClear() {
   const uid = auth.currentUser?.uid;
-  if (uid) try { localStorage.removeItem(`twp-shape-${uid}`); } catch { /* storage blocked */ }
+  if (uid) try { localStorage.removeItem(`twp-shape-${uid}`); localStorage.removeItem(`twp-gyms-${uid}`); } catch { /* storage blocked */ }
   await signOut(auth);
   try { await terminate(db); await clearIndexedDbPersistence(db); } catch (err) { console.warn("Cache clear", err); }
 }

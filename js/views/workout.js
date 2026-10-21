@@ -1,8 +1,9 @@
 // The Workout tab: today's plan and logging in one place.
-import { DIFF, LD, LU, P, PROFILES, TODAY, VARIANT_NOTE, autoSel, baseDay, bonusPickFor, bonusPicker, cardioProgram, conflicts, cycleStart, dayName, dayStatus, dayTitle, daysFor, defOf, deloadActive, deloadOf, deloadSuggestion, editKey, esc, funAt, funHeader, getDraft, gymSet, isHome, libItem, listText, nextPlanDay, other, otherSlotOn, personToggle, planEditBox, reminders, ring, riskBlock, seg, sessionFor, slotDate, slotKey, srFor, state, store, supersetIdeas, todaysList, vLabel, variantOf, warmupCard, workoutBar, yt, ytStretch } from "../app.js";
+import { DIFF, LD, LU, P, PROFILES, allGyms, currentGym, TODAY, VARIANT_NOTE, autoSel, baseDay, bonusPickFor, bonusPicker, cardioProgram, conflicts, cycleStart, dayName, dayStatus, dayTitle, daysFor, defOf, deloadActive, deloadOf, deloadSuggestion, editKey, esc, funAt, funHeader, getDraft, gymSet, isHome, libItem, listText, nextPlanDay, other, otherSlotOn, personToggle, planEditBox, reminders, ring, riskBlock, seg, sessionFor, slotDate, slotKey, srFor, state, store, supersetIdeas, todaysList, vLabel, variantOf, warmupCard, workoutBar, yt, ytStretch } from "../app.js";
 import * as A from "../a11y.js";
 import * as PG from "../program.js";
 import * as S from "../stats.js";
+import * as Q from "../equipment.js";
 import * as T from "../timer.js";
 import { reviewState, weekReview } from "./review.js";
 import { icon } from "../icons.js";
@@ -53,7 +54,7 @@ function viewToday() {
       const sr = ds.state === "done" ? `done ${S.fmtDate(ds.date)}` : ds.state === "missed" ? "missed" : next ? "up next" : "not done yet";
       return `<button data-act="selDay" data-v="${d}" aria-pressed="${d === day}" class="${ds.state}${next ? " next" : ""}" aria-label="${dayName(d)}, ${esc(dayTitle(u, week, d))}, ${sr}"><span class="d" aria-hidden="true">${dayName(d)}</span><span class="m" aria-hidden="true">${esc(dayTitle(u, week, d).split(",")[0])}</span>${note ? `<span class="today-dot" aria-hidden="true">${note}</span>` : ""}</button>`; }).join(""); })()}</div>
     ${day === "Bonus" ? `<p class="small muted home-note">Bonus day: ${esc(PG.BONUS_FOCUS[bonusPickFor(u, week).focus]?.[0] || "")}, ${bonusPickFor(u, week).where === "home" ? "at home" : "at the gym"}. It counts toward your week. Tap a day above to get back to your plan. <button class="btn small" data-act="bonusOpen">Change it</button></p>${state.bonusPicker ? bonusPicker(u) : ""}`
-      : `<button type="button" class="btn block home-pick" data-act="homeToggle" aria-pressed="${isHome(u, date)}">${icon("gym", 20)}<span>${isHome(u, date) ? `Doing ${esc(dayName(day))} at home. Switch back to the gym version` : `No gym today? Do ${esc(dayName(day))} at home`}</span></button>
+      : gymPicker(u, date)}${day === "Bonus" ? "" : `
     ${isHome(u, date) ? `<p class="small muted home-note">Same muscles as ${esc(dayName(day))}, using what you have at home${(P(u).homeGear || []).length ? ` (${esc(listText((P(u).homeGear || []).map(g => (PG.HOME_GEAR[g] || g).toLowerCase())))})` : ": just your body weight"}. It counts as ${esc(dayName(day))}. Change your home gear in Settings → Your plan.</p>` : ""}`}
     <div class="ring-row"><div class="today-title"><span class="eyebrow">Week ${week} · ${dayName(day)}${day !== "Bonus" && isHome(u, date) ? " · At home" : ""}</span><h2 class="h2" id="today-title">${esc(dayTitle(u, week, day))}</h2></div>${funAt("medium") ? ring(done, list.length) : `<span class="small muted">${done} of ${list.length} done</span>`}</div>
     ${funHeader(u)}
@@ -126,12 +127,27 @@ function isOpen(u, date, id, d, force) {
   if (d.sets.some(x => x.done) || T.isActive(`set:${u}|${date}|${id}|${d.sets.findIndex(x => !x.done)}`)) return true;
   return id === state.nextUpId;
 }
-// "At our gym": one tap switches this exercise to one of our purple machines (logged separately, like any library pick).
-function ourMachines(ex, v) {
-  const ids = (PLAN_MACHINES[ex.id] || []).map(libItem).filter(Boolean);
-  if (!ids.length) return "";
+// Where today's workout happens: one of your gyms, or home (your home gear). Replaces the old at-home button.
+function gymPicker(u, date) {
+  const home = isHome(u, date), g = currentGym(u, date), gyms = allGyms();
+  const opts = (gyms.length ? gyms : [g]).map(x => `<option value="${esc(x.id)}" ${!home && x.id === g.id ? "selected" : ""}>${esc(x.name)}${x.virtual ? " (set up yours in Settings)" : ""}</option>`).join("");
+  return `<div class="gym-pick"><label for="gym-pick">Training at</label><select id="gym-pick" data-act="pickGym">${opts}<option value="home" ${home ? "selected" : ""}>Home: your home gear</option><option value="add">Add or edit gyms…</option></select></div>`;
+}
+// "At <gym>": one tap switches this exercise to one of that gym's machines (logged separately, like any library pick).
+function ourMachines(ex, v, u, date) {
+  const g = currentGym(u, date);
+  const ids = (PLAN_MACHINES[ex.id] || []).map(libItem).filter(m => m && Q.canDo(g, m));
+  if (!ids.length || isHome(u, date)) return "";
   const cur = String(v).startsWith("lib:") ? v.slice(4) : "";
-  return `<div class="our-machines"><span class="small muted" id="om-${ex.id}">At our gym:</span><div class="row" role="group" aria-labelledby="om-${ex.id}">${ids.map(m => `<button type="button" class="btn small" data-act="useMachine" data-id="${esc(m.id)}" aria-pressed="${cur === m.id}">${esc(m.name)}</button>`).join("")}${cur && ids.some(m => m.id === cur) ? `<button type="button" class="btn small" data-act="variant" data-v="std">Back to plan</button>` : ""}</div></div>`;
+  return `<div class="our-machines"><span class="small muted" id="om-${ex.id}">At ${esc(g.name)}:</span><div class="row" role="group" aria-labelledby="om-${ex.id}">${ids.map(m => `<button type="button" class="btn small" data-act="useMachine" data-id="${esc(m.id)}" aria-pressed="${cur === m.id}">${esc(m.name)}</button>`).join("")}${cur && ids.some(m => m.id === cur) ? `<button type="button" class="btn small" data-act="variant" data-v="std">Back to plan</button>` : ""}</div></div>`;
+}
+// Today's gym is missing what the plan's version needs: say what we switched to, or what's missing.
+function standInNote(u, date, ex, d, def) {
+  if (ex.custom || isHome(u, date)) return "";
+  const g = currentGym(u, date);
+  if (d.standIn) return `<div class="pill hold">No ${esc(d.standIn.from)} listed at ${esc(g.name)}, so this is ${esc(def.name)} today.</div>`;
+  const miss = Q.missingFor(g, def);
+  return miss.length ? `<div class="pill hold">${esc(g.name)} may not have this: it needs ${esc(listText(miss.map(x => x.toLowerCase())))}. Pick another version above, or add it to the gym in Settings.</div>` : "";
 }
 function exerciseCard(u, date, ex, added, s, idx = 0, count = 0, cardOpts = {}) {
   const logged = s?.exercises?.find(e => e.id === ex.id);
@@ -160,13 +176,14 @@ function exerciseCard(u, date, ex, added, s, idx = 0, count = 0, cardOpts = {}) 
   const target = srFor(u, ex, def);
   const safety = lib || ex.lib || safetyFor(ex, v);
   const sore = safety ? conflicts(safety, u) : { high: [], some: [] };
-  const smith = /smith/i.test(def.name) ? (gymSet().smithBar ? `Smith bar: ${gymSet().smithBar} lb. Log it the same way every time (with or without the bar).` : "Smith bar weight isn't set yet. Add it in Settings → Our gym once you check.") : "";
+  const smithBar = Q.gymDetails(currentGym(u, date)).smithBar || gymSet().smithBar;
+  const smith = /smith/i.test(def.name) ? (smithBar ? `Smith bar: ${smithBar} lb. Log it the same way every time (with or without the bar).` : "Smith bar weight isn't set yet. Add it in Settings → My Gyms once you check.") : "";
   const tags = `${ex.custom || lib ? "" : ex.lib ? `<span class="tag orig">Library</span>` : `<span class="tag ${ex.tag}">${ex.tag === "orig" ? "Original" : "New"}</span>`}${added ? `<span class="tag orig">Added</span>` : ""}`;
   const open = isOpen(u, date, ex.id, d, cardOpts.forceOpen);
   const checked = d.sets.filter(x => x.done).length;
   const allDone = d.sets.length > 0 && d.sets.every(x => x.done);
   const tmr = T.isActive(`set:${u}|${date}|${ex.id}|${d.sets.findIndex(x => !x.done)}`);
-  const lastLine = `${checked ? `<b>${checked} of ${d.sets.length} ${d.sets.some(x => x.side) ? "sides" : "sets"} checked</b> · ` : ""}${tmr ? "<b>Timer running</b> · " : ""}${last ? `Last time: ${esc(S.describeSets(last.kind, last.db, last.sets))}` : prevV ? `No ${esc(def.name)} yet. Last time you did ${esc(prevV.name)}: ${esc(S.describeSets(prevV.kind, prevV.db, prevV.sets))}` : "No history yet"}${!open && sore.high.length ? ` · <span class="warn-text">Hard on your ${esc(listText(sore.high.map(j => (JOINTS[j] || j).toLowerCase())))} today</span>` : ""}`;
+  const lastLine = `${checked ? `<b>${checked} of ${d.sets.length} ${d.sets.some(x => x.side) ? "sides" : "sets"} checked</b> · ` : ""}${tmr ? "<b>Timer running</b> · " : ""}${d.standIn ? `<b>Swapped for this gym</b> · ` : ""}${last ? `Last time: ${esc(S.describeSets(last.kind, last.db, last.sets))}` : prevV ? `No ${esc(def.name)} yet. Last time you did ${esc(prevV.name)}: ${esc(S.describeSets(prevV.kind, prevV.db, prevV.sets))}` : "No history yet"}${!open && sore.high.length ? ` · <span class="warn-text">Hard on your ${esc(listText(sore.high.map(j => (JOINTS[j] || j).toLowerCase())))} today</span>` : ""}`;
   const head = `<div class="head ex-head"><h3 class="name"><button type="button" class="ex-toggle" data-act="toggleEx" aria-expanded="${open}" aria-controls="exb-${ex.id}">${exNum(idx, count, allDone)}<span class="ex-main"><span class="ex-name">${esc(def.name)}</span>${tags ? `<span class="ex-tags">${tags}</span>` : ""}</span>${schemeHtml(target)}<span class="ex-last">${lastLine}</span></button></h3></div>`;
   if (!open) return `<article class="card ex collapsed ${allDone ? "all-done" : ""}" id="ex-${ex.id}" data-ex="${ex.id}">${head}</article>`;
   return `<article class="card ex open ${allDone ? "all-done" : ""}" id="ex-${ex.id}" data-ex="${ex.id}">
@@ -177,7 +194,8 @@ function exerciseCard(u, date, ex, added, s, idx = 0, count = 0, cardOpts = {}) 
     ${why ? `<div class="why">${esc(why)}</div>` : ""}
     ${lib ? `<div class="row"><a class="video" href="${yt(lib.name)}" target="_blank" rel="noopener">Watch form videos</a><button class="btn small" data-act="libSwap">Change machine</button></div>` : ""}
     ${lib?.tip ? `<div class="small muted"><b>Setup:</b> ${esc(lib.tip)}</div>` : ""}
-    ${ourMachines(ex, v)}
+    ${ourMachines(ex, v, u, date)}
+    ${standInNote(u, date, ex, d, def)}
     ${ex.notes?.[u] ? `<div class="note">${esc(ex.notes[u])}</div>` : ""}
     ${smith ? `<div class="small muted">${esc(smith)}</div>` : ""}
     ${last ? `<div class="last small muted">Last time was ${S.fmtDate(last.date)}.</div>` : ""}

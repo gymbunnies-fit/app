@@ -367,6 +367,37 @@ for (const b of BUILTIN) {
   eq("no finish, no time", S.workoutDuration({ startedAt: t0 }), null);
 }
 
+// ---- gyms and equipment
+{
+  const Q = await import(join(here, "../js/equipment.js"));
+  const { ALL_EX: AX, variantDef: vd } = await import(join(here, "../js/plan.js"));
+  const { BUILTIN: LIB } = await import(join(here, "../js/library.js"));
+  const defs = Object.values(AX).flatMap(ex => ["std", "hard", "swap"].filter(v => !((v === "hard" && !ex.h) || (v === "swap" && !ex.swap))).map(v => vd(ex, v)));
+  const kirkwood = { items: Q.coverAll(Q.PRESETS.pf.items, [...defs, ...LIB.filter(b => b.equip === "machine")]) };
+  for (const d of defs) yes(`Planet Fitness Kirkwood can do ${d.name}`, Q.canDo(kirkwood, d));
+  for (const m of LIB.filter(b => b.equip === "machine")) yes(`Planet Fitness Kirkwood has the ${m.name}`, Q.canDo(kirkwood, m));
+  const ids = new Set(Q.EQUIPMENT.map(e => e.id));
+  eq("equipment ids are unique", ids.size, Q.EQUIPMENT.length);
+  yes("catalog has 100+ items", Q.EQUIPMENT.length >= 100);
+  for (const [k, p] of Object.entries(Q.PRESETS)) yes(`preset ${k} lists only real equipment`, p.items.every(id => ids.has(id)));
+  for (const d of [...defs, ...LIB]) for (const opt of Q.needsFor(d)) yes(`${d.name || d.n} needs real equipment`, opt.every(id => ids.has(id)));
+  eq("search finds a functional trainer by its other name", Q.searchEquipment("functional trainer").at(0)?.id, "cable-dual");
+  eq("search finds the pec deck", Q.searchEquipment("butterfly").at(0)?.id, "pec-deck");
+  const hotel = { items: Q.PRESETS.hotel.items };
+  yes("a hotel gym can't do a leg press", !Q.canDo(hotel, { name: "Leg Press" }));
+  yes("a hotel gym can do dumbbell curls", Q.canDo(hotel, { name: "Dumbbell Bicep Curl", db: true }));
+  eq("a hotel gym says what a leg press needs", Q.missingFor(hotel, { name: "Leg Press" }).join(), "Leg press machine");
+  yes("bodyweight moves work anywhere", Q.canDo({ items: [] }, { name: "Push-Ups", kind: "bw" }));
+  yes("an exercise someone added by hand is assumed available", Q.canDo({ items: [] }, { name: "Mystery Machine", equip: "machine" }));
+  const g = Q.newGym("g1", "", "hotel");
+  eq("a new gym takes the preset's name", g.name, "Hotel gym");
+  yes("a new gym copies the preset's items, not shares them", g.items !== Q.PRESETS.hotel.items && g.items.length === Q.PRESETS.hotel.items.length);
+  eq("a copied gym keeps the original's equipment", Q.newGym("g2", "", "", { name: "A", items: ["dumbbells"] }).items.join(), "dumbbells");
+  eq("details default to 2.5 lb steps", Q.gymDetails({}).cableStep, 2.5);
+  const typical = Q.DEFAULT_GYM; const missingAtTypical = defs.filter(d => !Q.canDo(typical, d)).map(d => d.name);
+  yes(`a typical big gym can do the plan (missing: ${missingAtTypical.join(", ") || "none"})`, missingAtTypical.length <= 2);
+}
+
 // ---- week review and Delete my account
 await (await import("./app-logic.mjs")).run({ dir, here, eq, yes });
 

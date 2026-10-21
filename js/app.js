@@ -7,7 +7,8 @@ import * as PG from "./program.js";
 import * as ST from "./stretch.js";
 import { icon, play } from "./icons.js";
 import * as S from "./stats.js";
-import { BUILTIN, GYM, EQUIP, PATTERN, JOINTS, POSITION, LEVEL, PLAN_PATTERN, STRETCH_BY_FOCUS, normalizeLib } from "./library.js";
+import * as Q from "./equipment.js";
+import { BUILTIN, GYM, PLAN_MACHINES, EQUIP, PATTERN, JOINTS, POSITION, LEVEL, PLAN_PATTERN, STRETCH_BY_FOCUS, normalizeLib } from "./library.js";
 import { connect, save, remove, patch, dropField, signOutAndClear, importAll, COLLECTIONS, watchAuth, signInGoogle, signInEmail, createEmailAccount, resetPassword, addGoogle, addPassword, currentInfo,
   getUserDoc, setUserDoc, createCrew, joinCrew, watchCrew, updateMember, removeMember, renameCrew, newInviteCode,
   sendFeedback, watchFeedback, answerFeedback } from "./firebase.js";
@@ -17,13 +18,14 @@ import { drawA11y, drawFeedback, fbNotify, openA11y, openFeedback } from "./view
 import { afterRender, cssVar, destroyCharts, viewProgress } from "./views/progress.js";
 import { OB_STEPS, drawOnboarding, finishOnboarding, openOnboarding, shareLink } from "./views/questionnaire.js";
 import { deleteMyAccount, openSettings } from "./views/settings.js";
+import { onGymChange, onGymClick, onGymInput } from "./views/gyms.js";
 import { strFinish, strGo, strRoutine, strState, viewStretch } from "./views/stretch.js";
 import { ev, isAdmin, track, trackSeen } from "./views/usage.js";
 import { focusSaved, openKey, stretchBox, viewToday } from "./views/workout.js";
 
 // ---------------------------------------------------------------- helpers
 // Shown at the bottom of Settings so you can tell whether a phone has the latest update. Bump with sw.js VERSION.
-const APP_VERSION = "57";
+const APP_VERSION = "58";
 // The app's name lives here only (plus app-v41.webmanifest and the <title> tags in index.html, which can't read JS).
 const APP_NAME = "GymBunnies.fit";
 const $ = (s, r = document) => r.querySelector(s);
@@ -181,13 +183,14 @@ function toast(msg, spoken = null) {
 const state = {
   fb: [], fbMode: null, fbDraft: null,
   bmSel: null, bmMode: store.get("twp-bm-mode", "effort"), bmShapeOpen: false, bodyShape: {},
+  myGyms: [], defaultGym: null, gymPick: {}, gymEdit: null, gymQ: "",
   user: store.get("twp-user", null),
   partner: store.get("twp-partner", false),
   view: store.get("twp-view", "today"),
   logUser: null, logDate: null, viewUser: null, sel: null, userTouchedSel: false, homeMode: {}, bonusPicker: false, bonusDraft: null, bonusPick: null,
   variants: store.get("twp-variants", {}),
   editing: new Set(),
-  data: { sessions: [], body: [], activities: [], settings: [], library: [], profiles: [], pings: [] }, libF: { q: "", equip: "all", focus: "all", pattern: "all", difficulty: "all", effort: "all", impact: "all", sort: "name", hideSore: "yes", ...store.get("twp-libf", {}) }, libEdit: null, libSwapFor: null, addPlan: null, planEdit: false,
+  data: { sessions: [], body: [], activities: [], settings: [], library: [], profiles: [], pings: [], gyms: [] }, libF: { q: "", equip: "all", focus: "all", pattern: "all", difficulty: "all", effort: "all", impact: "all", sort: "name", hideSore: "yes", ...store.get("twp-libf", {}) }, libEdit: null, libSwapFor: null, addPlan: null, planEdit: false,
   flags: {}, error: null, raw: {},
   progTab: "lifts", progEx: null, bodyField: "weight",
   repTab: "cycle", repCycle: null, cmpA: null, cmpB: null,
@@ -269,6 +272,7 @@ function writeSession(u, date, fields) {
   const cur = sessionFor(u, date);
   if (cur) { patch("sessions", cur.id, fields); return; }
   const extra = state.sel.day === "Bonus" ? (({ focus, where }) => ({ bonusFocus: focus, bonusWhere: where }))(bonusPickFor(u, state.sel.week)) : isHome(u, date) ? { atHome: true } : {};
+  if (!extra.atHome && extra.bonusWhere !== "home") { const g = currentGym(u, date); if (!g.virtual) Object.assign(extra, { gym: g.id, gymName: g.name }); }
   if (fields.ex || fields.cardio?.done) track({ workouts: 1, home: extra.atHome || extra.bonusWhere === "home" ? 1 : 0, bonus: state.sel.day === "Bonus" ? 1 : 0 });
   patch("sessions", sid(u, date), { user: u, date, week: state.sel.week, day: state.sel.day, ...extra, ...fields });
 }
@@ -386,10 +390,28 @@ function getDraft(u, date, ex, logged) {
   const k = dKey(u, date, ex.id); const d = store.get(k, null);
   if (d) return sided(ex, d);
   if (logged) return { variant: logged.variant || "std", sets: logged.sets.map(s => ({ ...s, done: true })), fresh: false };
-  const v = ex.custom ? "std" : variantOf(u, ex);
+  let v = ex.custom ? "std" : variantOf(u, ex); let standIn = null;
+  // Today's gym doesn't have what this version needs: start on the closest version or machine it does have.
+  if (!ex.custom && !isHome(u, date)) {
+    const g = currentGym(u, date);
+    if (!Q.canDo(g, defOf(ex, v))) { const alt = gymAlternative(ex, v, g, u); if (alt) { standIn = { from: defOf(ex, v).name, gym: g.name }; v = alt; } }
+  }
   const def = defOf(ex, v);
   const p = prefillSets(u, { sr: srFor(u, ex, def), kind: def.kind, db: def.db }, ex.id, v, date);
-  return sided(ex, { variant: v, ...p });
+  return sided(ex, { variant: v, ...p, ...(standIn ? { standIn } : {}) });
+}
+// The closest thing today's gym can do: the plan's other version, then a matching machine, then the library
+// exercise that works the same muscles the same way, and only then the harder version.
+function gymAlternative(ex, v, g, u = LU()) {
+  const ok = c => Q.canDo(g, defOf(ex, c));
+  const first = ["std", "swap"].filter(x => x !== v && validV(ex, x)).concat((PLAN_MACHINES[ex.id] || []).filter(id => libItem(id)).map(id => `lib:${id}`)).find(ok);
+  if (first) return first;
+  const pattern = PLAN_PATTERN[ex.id] || "", focus = ex.focus || [];
+  const best = allLibrary().filter(m => Q.canDo(g, m) && !conflicts(m, u).high.length && !m.home)
+    .map(m => ({ m, score: (pattern && m.pattern === pattern ? 3 : 0) + (m.focus || []).filter(f => focus.includes(f)).length * 2 + (!!m.db === !!defOf(ex, v).db ? 1 : 0) }))
+    .filter(x => x.score >= 4).sort((a, b) => b.score - a.score || a.m.name.localeCompare(b.m.name))[0];
+  if (best) return `lib:${best.m.id}`;
+  return ["hard"].find(x => x !== v && validV(ex, x) && ok(x)) || null;
 }
 // One-arm and one-leg moves log a Left and a Right row for each set.
 function sided(ex, d) { return { ...d, sets: S.withSides(d.sets || [], S.isSided(defOf(ex, d.variant).name)) }; }
@@ -492,7 +514,7 @@ function drawPicker() {
       <div class="grid2"><label class="field">What you track<select id="cx-kind"><option value="load">Weight × reps</option><option value="bw">Reps only</option><option value="time">Time (seconds)</option><option value="carry">Weight × steps</option><option value="assist">Assist weight × reps</option></select></label>
       <label class="check" style="align-self:end"><input type="checkbox" id="cx-db"><span>Dumbbells (weight per hand)</span></label></div>
       <div class="field"><span>What it works (so it shows up as a swap)</span><div class="focus-chips" id="cx-focus">${GROUPS.map(g => `<button type="button" data-act="libFocus" data-v="${g}" aria-pressed="false">${FOCUS[g]}</button>`).join("")}</div></div>
-      <label class="check"><input type="checkbox" id="cx-lib" checked><span>Save it to our gym library too</span></label>
+      <label class="check"><input type="checkbox" id="cx-lib" checked><span>Save it to the exercise library too</span></label>
       <button class="btn primary" data-act="addCustom">Add to today</button></section>
     ${libList ? `<section class="card"><h3 class="h3">From the gym library</h3><div class="pick-list">${libList}</div></section>` : ""}
     ${cust ? `<section class="card"><h3 class="h3">Ones you've added before</h3><div class="pick-list">${cust}</div></section>` : ""}
@@ -534,7 +556,7 @@ function drawLibSwap() {
   const scored = allLibrary().filter(m => `lib-${m.id}` !== ex.id).map(m => {
     const overlap = (m.focus || []).filter(f => ex.focus.includes(f)).length;
     return { m, score: (pattern && m.pattern === pattern ? 3 : 0) + overlap * 2 + ((m.focus2 || []).some(f => ex.focus.includes(f)) ? 1 : 0), same: pattern && m.pattern === pattern, overlap };
-  }).filter(x => x.overlap > 0 || x.same).sort((a, b) => b.score - a.score || a.m.name.localeCompare(b.m.name));
+  }).filter(x => x.overlap > 0 || x.same).filter(x => isHome(u, date) || Q.canDo(currentGym(u, date), x.m)).sort((a, b) => b.score - a.score || a.m.name.localeCompare(b.m.name));
   const ok = scored.filter(x => !conflicts(x.m, u).high.length);
   const sore = scored.filter(x => conflicts(x.m, u).high.length);
   const btn = ({ m, same }) => {
@@ -559,7 +581,7 @@ function riskBlock(m) {
   return `<div class="risk"><h4>Joints and injury risks</h4>
     ${j.length ? `<div class="joint-chips">${j.map(([k, v]) => `<span class="jchip ${v === 2 ? "high" : ""}">${esc(JOINTS[k])}: ${v === 2 ? "high load" : "some load"}</span>`).join("")}</div>` : ""}
     ${m.risks?.length ? `<ul class="risks">${m.risks.map(r => `<li><b>${esc(r.risk)}.</b> ${esc(r.avoid || "")}</li>`).join("")}</ul>` : ""}
-    ${m.heavy ? `<p class="small"><b>At our gym (dumbbells to about ${GYM.maxDumbbell} lb):</b> ${esc(m.heavy)}</p>` : ""}
+    ${m.heavy ? `<p class="small"><b>If the dumbbells run out (about ${Q.gymDetails(currentGym()).dbMax || 50} lb at ${esc(currentGym().name)}):</b> ${esc(m.heavy)}</p>` : ""}
     ${m.tip ? `<p class="small"><b>Setting up the machine:</b> ${esc(m.tip)}</p>` : ""}
     ${m.mts ? `<p class="small"><b>MTS:</b> each arm moves on its own. Press or pull with both, or one side at a time to even out a weaker side.</p>` : ""}
     <p class="small muted">General guidance, not medical advice. Sharp or lasting pain is worth a doctor or physical therapist visit.</p></div>`;
@@ -580,6 +602,10 @@ function viewGym() {
     (!F.q || m.name.toLowerCase().includes(F.q.toLowerCase())));
   const hiddenBySore = F.hideSore === "yes" ? list.filter(m => conflicts(m, u).high.length) : [];
   list = list.filter(m => !hiddenBySore.includes(m));
+  // Only what today's gym has, unless "Everything" is picked.
+  const gymNow = currentGym(); const where = F.where || "gym";
+  const notHere = list.filter(m => !Q.canDo(gymNow, m)).length;
+  if (where === "gym") list = list.filter(m => Q.canDo(gymNow, m));
   const sorts = {
     name: (a, b) => a.name.localeCompare(b.name),
     easy: (a, b) => a.difficulty - b.difficulty || a.name.localeCompare(b.name),
@@ -599,7 +625,9 @@ function viewGym() {
   const seen = new Set(); const quickU = quick.filter(e => !seen.has(e.n) && seen.add(e.n));
   return `<div class="row"><button type="button" class="btn small" data-act="libDone">${icon("chevron", 16, { stroke: 2 })}<span>Back to your workout</span></button></div><section class="card">
     <div class="between"><h2 class="h2">Exercise library</h2>${personToggle()}</div>
-    <p class="small muted">${all.length} exercises. ${esc(GYM.name)} dumbbells go to about ${GYM.maxDumbbell} lb. Swaps and "Add an exercise" pull from here.</p>
+    <p class="small muted">${all.length} exercises. ${esc(gymNow.name)}${Q.gymDetails(gymNow).dbMax ? ` dumbbells go to about ${Q.gymDetails(gymNow).dbMax} lb` : " has no dumbbells listed"}. Swaps and "Add an exercise" pull from here.</p>
+    <div class="field"><span>Where</span>${chips("where", [["gym", `At ${gymNow.name}`], ["all", "Everything"]])}</div>
+    ${where === "gym" && notHere ? `<p class="small muted">${notHere} more need equipment ${esc(gymNow.name)} doesn't list. Pick Everything to see them.</p>` : ""}
     ${ap ? `<div class="banner">Adding to ${ap.who === "both" ? "both plans" : esc(PROFILES[ap.who].name) + "'s plan"}: tap <b>Add to plan</b> on any exercise. <button class="btn small" data-act="apCancel">Cancel</button></div>` : ""}
     <label class="field">Search<input type="text" id="lib-q" data-act="libQ" value="${esc(F.q)}" placeholder="Row, lunge, press…" autocomplete="off"></label>
     <div class="field"><span>Equipment</span>${chips("equip", [["all", `All ${all.length}`], ...Object.entries(EQUIP).filter(([k]) => equipCounts[k]).map(([k, l]) => [k, `${l} ${equipCounts[k]}`])])}</div>
@@ -774,9 +802,57 @@ function celebrate(kind, text, spoken = null) {
 
 // ---------------------------------------------------------------- gym settings, weight steps, lighter weeks
 const gymSet = () => state.data.settings.find(x => x.id === "gym") || {};
-function stepFor(db, kind, w, dir) {
+
+// ---------------------------------------------------------------- gyms
+// Crew gyms live in the crew's data (everyone in the crew sees and uses them). Personal gyms live on the
+// person's own account record (users/{uid}), which only they can read. "preset:<key>" = a ready-made gym
+// used until someone sets one up.
+const crewGyms = () => (state.data.gyms || []).filter(g => !g.archived).map(g => ({ ...g, crew: true }));
+const allGyms = () => [...crewGyms(), ...(state.myGyms || []).map(g => ({ ...g, crew: false }))].sort((a, b) => a.name.localeCompare(b.name));
+function gymById(id) {
+  if (!id) return null;
+  if (String(id).startsWith("preset:")) { const k = id.slice(7); const p = Q.PRESETS[k]; return p ? { id, name: p.name, preset: k, items: p.items, details: p.details, virtual: true } : null; }
+  return allGyms().find(g => g.id === id) || null;
+}
+const gymPickKey = (date = LD()) => date;
+// Where today's workout happens: what the saved workout says, else what was picked today, else your default, else the first gym.
+function currentGym(u = LU(), date = LD()) {
+  const s = sessionFor(u, date);
+  return gymById(s?.gym) || gymById(state.gymPick[gymPickKey(date)]) || gymById(state.defaultGym) || allGyms()[0] || Q.DEFAULT_GYM;
+}
+function saveMyGyms() {
+  const uid = state.auth.user?.uid; if (!uid) return;
+  store.set(`twp-gyms-${uid}`, { list: state.myGyms, def: state.defaultGym });
+  setUserDoc(uid, { gyms: state.myGyms, defaultGym: state.defaultGym || null }).catch(() => toast("Couldn't save your gyms. They're kept on this phone for now."));
+}
+// Change one gym wherever it lives.
+function updateGym(id, fields) {
+  const crew = crewGyms().find(g => g.id === id);
+  if (crew) { patch("gyms", id, fields); return; }
+  state.myGyms = state.myGyms.map(g => g.id === id ? { ...g, ...fields } : g); saveMyGyms();
+}
+const newGymId = () => `gym-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+// Mat and Benny's gym: everything the app listed for Planet Fitness Kirkwood, plus whatever any version of
+// any plan exercise needs, so the plan stays exactly as it was. Made once, for the crew they train in.
+let gymMigrated = false;
+function migrateGym() {
+  if (gymMigrated) return;
+  const f = state.flags; if (!f.sessions || !f.gyms || !f.settings || f.sessions.fromCache || f.gyms.fromCache || f.settings.fromCache) return;
+  gymMigrated = true;
+  if ((state.data.gyms || []).length) return;
+  if (!state.data.sessions.some(s => s.user === "mat" || s.user === "benny")) return;
+  const defs = Object.values(ALL_EX).flatMap(ex => ["std", "hard", "swap"].filter(v => !((v === "hard" && !ex.h) || (v === "swap" && !ex.swap))).map(v => variantDef(ex, v)));
+  const items = Q.coverAll(Q.PRESETS.pf.items, [...defs, ...BUILTIN.filter(b => b.equip === "machine")]);
+  save("gyms", "pf-kirkwood", { name: GYM.name, preset: "pf", items, owner: state.auth.user?.uid || "", createdAt: Date.now(),
+    details: { ...Q.DETAIL_DEFAULTS, dbMax: GYM.maxDumbbell, dbStep: 2.5, machineStep: 2.5, cableStep: 2.5, smithBar: gymSet().smithBar ?? "" } });
+}
+// Weight steps come from today's gym: its dumbbell, cable and machine steps (hold the button to keep going).
+function stepFor(db, kind, w, dir, name = "") {
   if (kind === "assist") return 5;
-  return 2.5; // every weight moves in 2.5 lb steps (hold the button to keep going)
+  const g = Q.gymDetails(currentGym());
+  if (/cable|pulldown|face pull|pallof|pushdown|crossover/i.test(name)) return +g.cableStep || 2.5;
+  if (db) return +g.dbStep || 2.5;
+  return +g.machineStep || 2.5;
 }
 const roundTo = (w, step) => Math.max(0, Math.round(w / step) * step);
 const deloadOf = u => state.data.settings.find(x => x.id === `deload_${u}`) || null;
@@ -887,6 +963,7 @@ function reminders(u) {
   const lw = lastOf("weight"); if (!lw || S.daysBetween(lw, t) >= 7) out.push({ id: "weigh", text: lw ? `Weigh-in: last one was ${S.fmtDate(lw)}.` : "Add a first weigh-in on the Body tab as your starting point.", view: "body" });
   const lm = lastOf("waist"); if (!lm || S.daysBetween(lm, t) >= 14) out.push({ id: "measure", text: lm ? `Measurements are due (every two weeks; last ${S.fmtDate(lm)}).` : "Take your first measurements on the Body tab.", view: "body" });
   if (P(u).cardio === "intervals") { const lh = lastOf("restingHr"); if (!lh || S.daysBetween(lh, t) >= 7) out.push({ id: "hr", text: "Log your resting heart rate this week (first thing in the morning).", view: "body" }); }
+  if (!allGyms().length) out.push({ id: "gym", text: "Set up your gym so the app only suggests equipment you have.", view: "mygyms" });
   const ci = S.cycleInfo(t, cycleStart()); const left = S.daysBetween(t, ci.end);
   if (left <= 3) out.push({ id: "report", text: `This cycle ends ${S.fmtDate(ci.end)}. Check the cycle report and paste it to Claude for adjustments.`, view: "report" });
   const dismissed = store.get(`twp-rem-${u}-${t}`, []);
@@ -1151,7 +1228,7 @@ function go(view) {
 // − / + on a set: one tap = one step. Press and hold to keep going.
 function stepOnce(el) {
   const c = cardFor(el); if (!c || c.si == null) return; const f = el.dataset.f; const old = +c.d.sets[c.si][f] || 0; const dir = Math.sign(+el.dataset.by);
-  const def = defOf(c.ex, c.d.variant); const by = f === "w" ? stepFor(def.db, def.kind, old, dir) * dir : +el.dataset.by;
+  const def = defOf(c.ex, c.d.variant); const by = f === "w" ? stepFor(def.db, def.kind, old, dir, def.name) * dir : +el.dataset.by;
   setValue(c, f, Math.max(0, +(old + by).toFixed(2)));
 }
 let holdT = null, holdI = null, holdFired = false;
@@ -1168,6 +1245,7 @@ document.addEventListener("click", e => {
   const el = e.target.closest("[data-act]"); if (!el) return;
   const act = el.dataset.act; const v = el.dataset.v;
   ev(`t_${act}`);
+  if (act.startsWith("gym") && onGymClick(act, el)) return;
   switch (act) {
     case "newProfile": openOnboarding(null); break;
     case "obRetake": openOnboarding(state.user); break;
@@ -1246,7 +1324,7 @@ document.addEventListener("click", e => {
     case "a11yTestFlash": A.flash("GO", true); break;
     case "setVoice": saveProfile(state.user, { voice: v }); setTimeout(openSettings, 60); toast(F.say(v, "saveEx", { name: "Sample" })); break;
     case "setFun": saveProfile(state.user, { fun: v }); setTimeout(() => { openSettings(); render(); }, 60); break;
-    case "goView": go(v); break;
+    case "goView": if (v === "mygyms") { openSettings(); setTimeout(() => scrollInto($("#my-gyms"), "start"), 60); } else go(v); break;
     case "dismissRem": { const k = `twp-rem-${LU()}-${TODAY()}`; store.set(k, [...store.get(k, []), v]); render(); break; }
     case "startDeload": save("settings", `deload_${LU()}`, { from: TODAY(), to: S.addDays(TODAY(), 6) }); toast("Lighter week on. New exercises you open will be pre-filled lighter."); break;
     case "endDeload": save("settings", `deload_${LU()}`, { from: deloadOf(LU()).from, to: S.addDays(TODAY(), -1) }); toast("Lighter week ended."); break;
@@ -1531,7 +1609,8 @@ A.watchOverlay($("#overlay"), [$("header.top"), $("#main"), $("#tabs"), $(".skip
 });
 // Keep the tab bar pinned to the bottom on iPhone: hide it while the keyboard is up, then put it back and
 // nudge the page so Safari re-measures where "bottom" is.
-const isTyping = el => el && el.matches?.("input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=button]), textarea, select, [contenteditable]");
+// Fields that bring up the keyboard. Dropdowns don't: their picker closes as soon as you choose.
+const isTyping = el => el && el.matches?.("input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=button]), textarea, [contenteditable]");
 let kbT = null;
 document.addEventListener("focusin", e => { if (isTyping(e.target)) { clearTimeout(kbT); document.body.classList.add("kb-open"); } });
 document.addEventListener("focusout", () => {
@@ -1555,6 +1634,7 @@ document.getElementById("who").addEventListener("click", openSettings);
 document.getElementById("gear").addEventListener("click", openSettings);
 
 document.addEventListener("input", e => {
+  if (onGymInput(e.target)) return;
   const el = e.target;
   if (el.dataset.f === "w" || el.dataset.f === "r") {
     const c = cardFor(el); if (!c) return;
@@ -1586,7 +1666,19 @@ document.addEventListener("submit", e => {
 document.addEventListener("change", e => {
   const el = e.target; const act = el.dataset.act;
   if (act || el.dataset.a11y || el.dataset.gym) ev(`c_${act || (el.dataset.a11y ? `a11y_${el.dataset.a11y}` : "gym")}`);
+  if ((act || el.dataset.gymd) && onGymChange(el)) return;
   if (act === "progEx") { state.progEx = el.value; render(); }
+  if (act === "pickGym") {
+    const u = LU(), date = LD(), k = homeKey(u, date), cur = sessionFor(u, date);
+    if (el.value === "add") { el.value = isHome(u, date) ? "home" : currentGym(u, date).id; openSettings(); setTimeout(() => scrollInto($("#my-gyms"), "start"), 60); return; }
+    if (el.value === "home") { state.homeMode[k] = true; if (cur) patch("sessions", cur.id, { atHome: true }); toast(`Home version of ${dayName(state.sel.day)}. Same muscles, your home gear.`); }
+    else {
+      state.homeMode[k] = false; state.gymPick[gymPickKey(date)] = el.value; const g = gymById(el.value);
+      if (cur) patch("sessions", cur.id, { atHome: false, ...(g && !g.virtual ? { gym: g.id, gymName: g.name } : {}) });
+      toast(`Training at ${g ? g.name : "the gym"}.`);
+    }
+    render(); $("#gym-pick")?.focus();
+  }
   if (act === "setAccent") { saveProfile(state.user, { accent: el.value }); setTimeout(() => { applyAppearance(); render(); }, 60); }
   if (act === "setSound") saveProfile(state.user, { sound: el.checked });
   if (el.dataset.a11y) { setA11y({ [el.dataset.a11y]: el.checked }); A.announce(`${el.closest("label")?.querySelector("b")?.textContent || "Option"} ${el.checked ? "on" : "off"}`); }
@@ -1628,6 +1720,7 @@ function onData(name, docs, fromCache, pending) {
   if ((name === "settings" || name === "sessions") && !state.userTouchedSel) state.sel = null;
   if (name === "sessions") { relabel(); consolidate(); }
   if (name === "pings") handlePings();
+  if (["sessions", "gyms", "settings"].includes(name)) migrateGym();
   if (["sessions", "body", "activities"].includes(name)) checkAchievements();
   updateSync();
   // Firestore reports each save twice (sent, then confirmed) and the crew's other phone saves too. If nothing
@@ -1689,9 +1782,11 @@ watchAuth(async (u, err) => {
   if (!u) { stopAll(); state.auth.ready = true; render(); return; }
   let crewId = store.get(`twp-crew-${u.uid}`, null);
   state.bodyShape = store.get(`twp-shape-${u.uid}`, {}) || {};
+  ({ list: state.myGyms, def: state.defaultGym } = store.get(`twp-gyms-${u.uid}`, { list: [], def: null }));
   try {
     const d = await getUserDoc(u.uid); if (d?.crewId) crewId = d.crewId;
     if (d?.bodyShape && typeof d.bodyShape === "object") { state.bodyShape = d.bodyShape; store.set(`twp-shape-${u.uid}`, d.bodyShape); }
+    if (d && (Array.isArray(d.gyms) || d.defaultGym !== undefined)) { state.myGyms = Array.isArray(d.gyms) ? d.gyms : []; state.defaultGym = d.defaultGym || null; store.set(`twp-gyms-${u.uid}`, { list: state.myGyms, def: state.defaultGym }); }
   } catch (e) { state.auth.error = e.message; }
   if (crewId) startCrew(crewId);
   state.auth.ready = true; render();
@@ -1781,7 +1876,7 @@ if ("serviceWorker" in navigator) {
 // ---------------------------------------------------------------- updates
 // Every time the app opens (or comes back to the front), ask the server which version is live.
 // If it's newer than this copy, throw the old copy away and reload. No buttons needed.
-const SHELL_FILES = ["./", "index.html", "css/styles.css", "js/app.js", "js/plan.js", "js/stats.js", "js/firebase.js", "js/library.js", "js/fun.js", "js/safety.js", "js/timer.js", "js/a11y.js", "js/icons.js", "js/tailor.js", "js/program.js", "js/stretch.js", "js/anatomy.js", "js/muscles.js", "js/views/areas.js", "js/views/bodymap.js", "js/views/body.js", "js/views/crew.js", "js/views/feedback.js", "js/views/progress.js", "js/views/questionnaire.js", "js/views/review.js", "js/views/settings.js", "js/views/stretch.js", "js/views/usage.js", "js/views/workout.js", "app-v41.webmanifest", "sw.js"];
+const SHELL_FILES = ["./", "index.html", "css/styles.css", "js/app.js", "js/plan.js", "js/stats.js", "js/firebase.js", "js/library.js", "js/fun.js", "js/safety.js", "js/timer.js", "js/a11y.js", "js/icons.js", "js/tailor.js", "js/program.js", "js/stretch.js", "js/anatomy.js", "js/equipment.js", "js/muscles.js", "js/views/areas.js", "js/views/bodymap.js", "js/views/body.js", "js/views/crew.js", "js/views/feedback.js", "js/views/gyms.js", "js/views/progress.js", "js/views/questionnaire.js", "js/views/review.js", "js/views/settings.js", "js/views/stretch.js", "js/views/usage.js", "js/views/workout.js", "app-v41.webmanifest", "sw.js"];
 async function liveVersion() {
   try { const r = await fetch(`sw.js?check=${Date.now()}`, { cache: "no-store" }); const m = /VERSION = "twp-v(\d+)"/.exec(await r.text()); return m ? m[1] : null; } catch { return null; }
 }
@@ -1811,4 +1906,4 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 try { const from = sessionStorage.getItem("twp-updated-from"); if (from) { sessionStorage.removeItem("twp-updated-from"); setTimeout(() => toast(from === APP_VERSION ? `Up to date: version ${APP_VERSION}.` : `Updated to version ${APP_VERSION}.`), 800); } } catch { /* ignore */ }
 
 // Shared with the screens in js/views/.
-export { $, APP_VERSION, AVATARS, DIFF, FUN_LEVELS, GROUPS, LD, LU, P, PROFILES, PROFILE_DEFAULTS, THEMES, TODAY, VARIANT_NOTE, a11yOn, aches, autoSel, avatarHtml, baseDay, bonusDates, bonusPickFor, bonusPicker, canSee, cardioProgram, closeOverlay, conflicts, crewCard, crewSettings, cyclePlan, cycleStart, dayEdits, dayName, dayStatus, dayTitle, daysFor, defOf, deloadActive, deloadOf, deloadSuggestion, editKey, esc, funAt, funHeader, getDraft, gymSet, isHome, libItem, listText, nextPlanDay, other, otherSlotOn, paceOf, personToggle, planDay, planEditBox, profileIds, reminders, render, resolveEx, ring, riskBlock, saveProfile, seg, sessionFor, shareOf, slotDate, slotKey, slug, srFor, state, stopAll, store, supersetIdeas, toast, todaysList, vLabel, variantOf, warmupCard, workoutBar, yt, ytStretch };
+export { $, APP_VERSION, allGyms, crewGyms, currentGym, gymById, newGymId, saveMyGyms, updateGym, AVATARS, DIFF, FUN_LEVELS, GROUPS, LD, LU, P, PROFILES, PROFILE_DEFAULTS, THEMES, TODAY, VARIANT_NOTE, a11yOn, aches, autoSel, avatarHtml, baseDay, bonusDates, bonusPickFor, bonusPicker, canSee, cardioProgram, closeOverlay, conflicts, crewCard, crewSettings, cyclePlan, cycleStart, dayEdits, dayName, dayStatus, dayTitle, daysFor, defOf, deloadActive, deloadOf, deloadSuggestion, editKey, esc, funAt, funHeader, getDraft, gymSet, isHome, libItem, listText, nextPlanDay, other, otherSlotOn, paceOf, personToggle, planDay, planEditBox, profileIds, reminders, render, resolveEx, ring, riskBlock, saveProfile, seg, sessionFor, shareOf, slotDate, slotKey, slug, srFor, state, stopAll, store, supersetIdeas, toast, todaysList, vLabel, variantOf, warmupCard, workoutBar, yt, ytStretch };

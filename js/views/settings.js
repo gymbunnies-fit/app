@@ -1,11 +1,12 @@
 // Settings, including Delete my account.
-import { $, APP_VERSION, FUN_LEVELS, P, THEMES, TODAY, a11yOn, crewSettings, cycleStart, esc, gymSet, other, personToggle, profileIds, state, stopAll, store, toast } from "../app.js";
+import { $, APP_VERSION, FUN_LEVELS, P, THEMES, TODAY, a11yOn, crewSettings, cycleStart, esc, other, personToggle, profileIds, state, stopAll, store, toast } from "../app.js";
 import * as A from "../a11y.js";
 import * as S from "../stats.js";
 import { fbMine, fbNew } from "./feedback.js";
 import { cssVar } from "./progress.js";
 import { ev, isAdmin } from "./usage.js";
 import { deleteEverything, reauth } from "../firebase.js";
+import { myGymsCard } from "./gyms.js";
 
 // ---------------------------------------------------------------- settings
 // ---------------------------------------------------------------- delete my account
@@ -52,7 +53,7 @@ try { if (sessionStorage.getItem("gb-deleted")) { sessionStorage.removeItem("gb-
 function openSettings() {
   if (state.overlay !== "settings") ev("v_settings");
   state.overlay = "settings";
-  const u = state.user; const p = P(u); const cs = cycleStart(); const ci = S.cycleInfo(TODAY(), cs); const g = gymSet();
+  const u = state.user; const p = P(u); const cs = cycleStart(); const ci = S.cycleInfo(TODAY(), cs);
   const one = (act, cur, opts) => `<div class="seg" role="group">${opts.map(([v, l]) => `<button type="button" data-act="${act}" data-v="${v}" aria-pressed="${cur === v}">${esc(l)}</button>`).join("")}</div>`;
   $("#overlay").innerHTML = `<div class="overlay" role="dialog" aria-label="Settings"><div class="inner">
     <div class="between"><h2 class="h2">Settings</h2><button class="btn small" data-act="closeOverlay">Close</button></div>
@@ -88,9 +89,7 @@ function openSettings() {
       <div class="field"><span>How the app talks to you</span>${one("setVoice", p.voice || "hype", [["hype", "Hype"], ["chill", "Chill"], ["plain", "Just the numbers"]])}</div>
       <div class="field"><span>Fun level</span>${one("setFun", p.fun || "medium", [["light", "Light"], ["medium", "Medium"], ["full", "Full"]])}<p class="small muted">${esc(FUN_LEVELS[p.fun || "medium"])}</p></div>
       <label class="check"><input type="checkbox" data-act="setSound" ${p.sound !== false ? "checked" : ""}><span>Sounds and vibration</span></label></section>
-    <section class="card"><h3 class="h3">Our gym</h3>
-      <p class="small muted">Shared by everyone. Weights step by 2.5 lb; hold + or − to keep going.</p>
-      <label class="field">Smith bar weight (lb)<input type="number" step="any" data-gym="smithBar" value="${esc(g.smithBar ?? "")}" placeholder="Check at the gym"></label></section>
+    ${myGymsCard()}
     <section class="card"><h3 class="h3">Two-week cycle</h3>
       <label class="field">Week A started on (a Monday)<input type="date" data-act="cycleStart" value="${cs}"></label>
       <p class="small muted">Today is in Week ${ci.week}. Shared by everyone.</p></section>
