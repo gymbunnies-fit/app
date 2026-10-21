@@ -151,6 +151,9 @@ function exerciseCard(u, date, ex, added, s, idx = 0, count = 0, cardOpts = {}) 
   if (!ex.custom) opts.push(["lib", "Library"]);
   const why = lib ? (lib.how || lib.notes || `From your gym library. Same target: ${ex.sr}.`) : v === "hard" && ex.h ? ex.h.how : v === "swap" && ex.swap ? ex.swap.how : ex.why;
   const last = S.lastTime(state.data.sessions, u, ex.id, v);
+  // Nothing for this exact version, but something else was logged here last time: point to it.
+  const prevAny = !last && !ex.custom ? S.lastTime(state.data.sessions, u, ex.id) : null;
+  const prevV = prevAny && (prevAny.variant || "std") !== v && S.defFor(ex.id, prevAny.variant || "std", prevAny).name !== def.name ? prevAny : null;
   const sug = ex.custom ? null : S.suggestion(state.data.sessions, u, ex.id, v);
   const pu = other(u), pLast = state.partner ? S.lastTime(state.data.sessions, pu, ex.id, ex.custom ? "std" : variantOf(pu, ex)) : null;
   const entry = { kind: def.kind, db: def.db };
@@ -163,7 +166,7 @@ function exerciseCard(u, date, ex, added, s, idx = 0, count = 0, cardOpts = {}) 
   const checked = d.sets.filter(x => x.done).length;
   const allDone = d.sets.length > 0 && d.sets.every(x => x.done);
   const tmr = T.isActive(`set:${u}|${date}|${ex.id}|${d.sets.findIndex(x => !x.done)}`);
-  const lastLine = `${checked ? `<b>${checked} of ${d.sets.length} ${d.sets.some(x => x.side) ? "sides" : "sets"} checked</b> · ` : ""}${tmr ? "<b>Timer running</b> · " : ""}${last ? `Last time: ${esc(S.describeSets(last.kind, last.db, last.sets))}` : "No history yet"}${!open && sore.high.length ? ` · <span class="warn-text">Hard on your ${esc(listText(sore.high.map(j => (JOINTS[j] || j).toLowerCase())))} today</span>` : ""}`;
+  const lastLine = `${checked ? `<b>${checked} of ${d.sets.length} ${d.sets.some(x => x.side) ? "sides" : "sets"} checked</b> · ` : ""}${tmr ? "<b>Timer running</b> · " : ""}${last ? `Last time: ${esc(S.describeSets(last.kind, last.db, last.sets))}` : prevV ? `No ${esc(def.name)} yet. Last time you did ${esc(prevV.name)}: ${esc(S.describeSets(prevV.kind, prevV.db, prevV.sets))}` : "No history yet"}${!open && sore.high.length ? ` · <span class="warn-text">Hard on your ${esc(listText(sore.high.map(j => (JOINTS[j] || j).toLowerCase())))} today</span>` : ""}`;
   const head = `<div class="head ex-head"><h3 class="name"><button type="button" class="ex-toggle" data-act="toggleEx" aria-expanded="${open}" aria-controls="exb-${ex.id}">${exNum(idx, count, allDone)}<span class="ex-main"><span class="ex-name">${esc(def.name)}</span>${tags ? `<span class="ex-tags">${tags}</span>` : ""}</span>${schemeHtml(target)}<span class="ex-last">${lastLine}</span></button></h3></div>`;
   if (!open) return `<article class="card ex collapsed ${allDone ? "all-done" : ""}" id="ex-${ex.id}" data-ex="${ex.id}">${head}</article>`;
   return `<article class="card ex open ${allDone ? "all-done" : ""}" id="ex-${ex.id}" data-ex="${ex.id}">
@@ -178,6 +181,7 @@ function exerciseCard(u, date, ex, added, s, idx = 0, count = 0, cardOpts = {}) 
     ${ex.notes?.[u] ? `<div class="note">${esc(ex.notes[u])}</div>` : ""}
     ${smith ? `<div class="small muted">${esc(smith)}</div>` : ""}
     ${last ? `<div class="last small muted">Last time was ${S.fmtDate(last.date)}.</div>` : ""}
+    ${prevV ? `<div class="pill hold use-last"><span>Last time (${S.fmtDate(prevV.date)}) you did <b>${esc(prevV.name)}</b> here instead.</span><button type="button" class="btn small" data-act="useLastV" data-v="${esc(prevV.variant || "std")}">Use that again</button></div>` : ""}
     ${state.partner ? `<div class="last">${esc(PROFILES[pu].name)}: ${pLast ? `<b>${esc(S.describeSets(pLast.kind, pLast.db, pLast.sets))}</b>` : "no history yet"}</div>` : ""}
     ${sug ? `<div class="pill ${sug.type}">${esc(sug.text)}</div>` : ""}
     ${d.fresh ? `<div class="pill hold fresh-note">First time: set the weight and reps you actually did.</div>` : ""}

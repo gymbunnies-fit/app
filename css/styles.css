@@ -989,3 +989,11 @@ body[data-skin="iron"] .chips.day-tiles button[aria-pressed="true"] :is(.d,.m,.t
 body.a11y-big-text .bm-list{grid-template-columns:1fr}
 body.a11y-big-text .bm-item .bm-n{white-space:normal}
 @media (prefers-reduced-motion:reduce){.bm-m{transition:none}}
+
+/* fixes: pill buttons centre their text; Stretch heading spacing; programmatic heading focus (screen readers)
+   shows no ring even with the big-focus-ring option, so it never boxes over the text above it */
+.btn.pill{display:inline-flex;align-items:center;justify-content:center}
+#str-h{margin-bottom:12px}
+body.a11y-focusRing [tabindex="-1"]:focus:not(:focus-visible){outline:none!important;box-shadow:none!important}
+.use-last{align-items:center;justify-content:space-between;flex-wrap:wrap}
+#str-h ~ .stats,#str-h + .stats{margin-bottom:12px}

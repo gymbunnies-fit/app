@@ -354,6 +354,16 @@ for (const b of BUILTIN) {
   for (const id of Object.keys(MU.MUSCLES)) yes(`${id} is drawn on the figure`, drawn.has(id));
 }
 
+// ---- workout time: hidden when the workout was logged after the fact
+{
+  const ex = n => Array.from({ length: n }, (_, i) => ({ id: "e" + i, sets: [{ w: 10, r: 10 }] }));
+  eq("a real 50-minute workout shows its time", S.workoutDuration({ startedAt: 0, finishedAt: 50 * 60e3, exercises: ex(6) }), 50 * 60e3);
+  eq("6 exercises logged in 4 minutes hides the time", S.workoutDuration({ startedAt: 0, finishedAt: 4 * 60e3, exercises: ex(6) }), null);
+  eq("6 exercises in 11 minutes is still too fast to be real", S.workoutDuration({ startedAt: 0, finishedAt: 11 * 60e3, exercises: ex(6) }), null);
+  eq("a timer left running overnight hides the time", S.workoutDuration({ startedAt: 0, finishedAt: 9 * 3600e3, exercises: ex(6) }), null);
+  eq("no finish, no time", S.workoutDuration({ startedAt: 0 }), null);
+}
+
 // ---- week review and Delete my account
 await (await import("./app-logic.mjs")).run({ dir, here, eq, yes });
 

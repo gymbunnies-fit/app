@@ -12,7 +12,7 @@ import { areaCard } from "./areas.js";
 // Once a week is finished (or over), the Workout screen shows a look back instead of the last day.
 const sessDone = x => (x.exercises || []).some(e => e.sets?.length) || x.markedDone;
 const minsText = m => (m >= 60 ? `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m` : `${m} min`);
-const sessMinutes = x => (x.startedAt && x.finishedAt && x.finishedAt > x.startedAt && x.finishedAt - x.startedAt < 5 * 3600e3 ? Math.round((x.finishedAt - x.startedAt) / 60000) : 0);
+const sessMinutes = x => { const d = S.workoutDuration(x); return d ? Math.round(d / 60000) : 0; };
 function weekRange(week) { const from = slotDate(week, "Mon"); return { from, to: S.addDays(from, 6) }; }
 function weekSessionsOf(u, from, to) { return state.data.sessions.filter(x => x.user === u && x.date >= from && x.date <= to && sessDone(x)); }
 // Should this week show its review? Past weeks always; this week once every day is done and nothing from today is still in progress.

@@ -20,6 +20,15 @@ export function withSides(sets, sided) {
 }
 export const setCount = sets => (sets || []).filter(x => x.side !== "R").length;
 
+// How long a workout took, or null when it was clearly logged after the fact (all at once, minutes apart)
+// or the timer was left running.
+export function workoutDuration(s) {
+  if (!s?.startedAt || !s?.finishedAt) return null;
+  const d = s.finishedAt - s.startedAt, n = (s.exercises || []).filter(e => e.sets?.length).length;
+  if (d <= 0 || d > 5 * 3600e3 || d < 10 * 60e3 || d < n * 2 * 60e3) return null;
+  return d;
+}
+
 export const STEP = 5; // lb increment for weight-bump suggestions
 
 // ---- dates -------------------------------------------------------------

@@ -23,7 +23,7 @@ import { focusSaved, openKey, stretchBox, viewToday } from "./views/workout.js";
 
 // ---------------------------------------------------------------- helpers
 // Shown at the bottom of Settings so you can tell whether a phone has the latest update. Bump with sw.js VERSION.
-const APP_VERSION = "56";
+const APP_VERSION = "57";
 // The app's name lives here only (plus app-v41.webmanifest and the <title> tags in index.html, which can't read JS).
 const APP_NAME = "GymBunnies.fit";
 const $ = (s, r = document) => r.querySelector(s);
@@ -232,7 +232,16 @@ function dayStatus(u, week, day) {
   const doneCount = daysFor(u, week).filter(d => d !== day && state.data.sessions.some(x => x.user === u && x.week === week && x.day === d && x.date >= cyc.start && x.date <= cyc.end && ((x.exercises || []).some(e => e.sets?.length) || x.markedDone))).length;
   return { state: doneCount >= Math.min(daysFor(u, week).length, paceOf(u)) ? "skipped" : "missed" };
 }
-const variantOf = (u, ex) => state.variants[`${u}:${ex.id}`] || tailoredV(u, ex) || (P(u).defaultVariant === "hard" && ex.h ? "hard" : "std");
+const variantOf = (u, ex) => repeatedV(u, ex) || state.variants[`${u}:${ex.id}`] || tailoredV(u, ex) || (P(u).defaultVariant === "hard" && ex.h ? "hard" : "std");
+// The same version or machine picked the last two times this exercise was logged: open on it.
+function repeatedV(u, ex) {
+  if (ex.custom) return null;
+  const h = S.exHistory(state.data.sessions, u, ex.id); if (h.length < 2) return null;
+  const a = h[h.length - 1].variant || "std", b = h[h.length - 2].variant || "std";
+  if (a !== b || !validV(ex, a)) return null;
+  return a;
+}
+const validV = (ex, v) => !((v === "hard" && !ex.h) || (v === "swap" && !ex.swap) || (String(v).startsWith("lib:") && !libItem(String(v).slice(4))));
 // The version the questionnaire picked for this person, if it still exists.
 function tailoredV(u, ex) {
   const t = P(u).tailor?.[ex.id]; if (!t) return null;
@@ -494,7 +503,7 @@ function addExtra(entry) {
   const u = LU(), date = LD(); const xs = getExtras(u, date);
   if (!xs.find(x => x.id === entry.id)) xs.push(entry);
   store.set(xKey(u, date), xs); closeOverlay(); render();
-  setTimeout(() => document.getElementById(`ex-${entry.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
+  setTimeout(() => scrollInto(document.getElementById(`ex-${entry.id}`), "center", true), 50);
 }
 
 // ---------------------------------------------------------------- definitions incl. library swaps
@@ -818,7 +827,8 @@ function workoutBar(u, date, s) {
     elapsedTick = setInterval(() => { const el = $("#elapsed"); if (el) el.textContent = fmtDur(Date.now() - s.startedAt); else clearInterval(elapsedTick); }, 1000);
     return `<div class="timerbar"><span>Workout time <b class="mono" id="elapsed">${fmtDur(Date.now() - s.startedAt)}</b></span><button class="btn small primary" data-act="finishWorkout">Finish workout</button></div>`;
   }
-  return `<div class="timerbar"><span>Finished in <b class="mono">${fmtDur(s.finishedAt - s.startedAt)}</b></span><button class="btn small" data-act="showSummary">Summary</button></div>`;
+  const dur = S.workoutDuration(s);
+  return `<div class="timerbar"><span>${dur ? `Finished in <b class="mono">${fmtDur(dur)}</b>` : "<b>Finished</b>"}</span><button class="btn small" data-act="showSummary">Summary</button></div>`;
 }
 const fmtDur = ms => { const t = Math.max(0, Math.floor(ms / 1000)); const h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), sec = t % 60; return h ? `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}` : `${m}:${String(sec).padStart(2, "0")}`; };
 function summaryFor(u, date) {
@@ -827,7 +837,7 @@ function summaryFor(u, date) {
   const vol = Math.round(ex.reduce((t, e) => t + F.volumeOf(e), 0));
   const prs = F.prEvents(state.data.sessions, u).filter(p => p.date === date);
   const pts = F.points(state.data.sessions, state.data.activities, u, date, date);
-  return { s, ex, sets: ex.reduce((t, e) => t + e.sets.length, 0), vol, prs, pts, dur: s.finishedAt && s.startedAt ? s.finishedAt - s.startedAt : null };
+  return { s, ex, sets: ex.reduce((t, e) => t + e.sets.length, 0), vol, prs, pts, dur: S.workoutDuration(s) };
 }
 function openSummary(u, date) {
   const r = summaryFor(u, date); if (!r) return;
@@ -1116,6 +1126,19 @@ function anchorOf(id) {
   };
 }
 const focusOnNow = () => !!document.querySelector("#main .focus-head");
+// Scroll only the scrolling box (the middle of the app, or a pop-up). scrollIntoView also scrolls the page
+// itself, and on iPhone that slides the whole app up under the status bar, hiding the header.
+function scrollInto(el, block = "nearest", smooth = false) {
+  if (!el) return;
+  const box = el.closest(".overlay") || $("#main"); if (!box) return;
+  const b = box.getBoundingClientRect(), r = el.getBoundingClientRect();
+  let d = 0;
+  if (block === "start") d = r.top - b.top - 8;
+  else if (block === "center") d = r.top - b.top - (b.height - r.height) / 2;
+  else if (r.top < b.top + 8) d = r.top - b.top - 8;
+  else if (r.bottom > b.bottom - 8) d = Math.min(r.bottom - b.bottom + 8, r.top - b.top - 8);
+  if (Math.abs(d) > 1) box.scrollTo({ top: box.scrollTop + d, behavior: smooth && !A.reduceMotion() ? "smooth" : "auto" });
+}
 function toTop() { $("#main")?.scrollTo(0, 0); window.scrollTo(0, 0); }
 function go(view) {
   if (view === "report") { view = "progress"; state.progTab = "report"; }
@@ -1290,6 +1313,12 @@ document.addEventListener("click", e => {
       const def = defOf(c.ex, v); const p = prefillSets(c.u, { sr: def.sr, kind: def.kind }, c.id, v);
       putDraft(c.u, c.date, c.id, { variant: v, ...p }); render(); break;
     }
+    case "useLastV": {
+      // "Use that again": switch this card to the version or machine used last time.
+      const c = cardFor(el); if (!validV(c.ex, v)) break;
+      const def = defOf(c.ex, v); const p = prefillSets(c.u, { sr: def.sr, kind: def.kind, db: def.db }, c.id, v);
+      putDraft(c.u, c.date, c.id, { variant: v, ...p }); render(); break;
+    }
     case "timer": { const c = cardFor(el); openTimer(c ? c.id : el.dataset.ex); break; }
     case "step": if (holdFired) { holdFired = false; break; } stepOnce(el); break;
     case "diff": {
@@ -1316,7 +1345,7 @@ document.addEventListener("click", e => {
       const card = el.closest("[data-ex]"); const u = LU(), date = LD(); const k = openKey(u, date);
       const m = store.get(k, {}); const opening = el.getAttribute("aria-expanded") !== "true"; m[card.dataset.ex] = opening; store.set(k, m);
       render(); A.announce(opening ? "Opened" : "Closed");
-      if (opening) $(`#ex-${CSS.escape(card.dataset.ex)}`)?.scrollIntoView({ block: "nearest", behavior: A.reduceMotion() ? "auto" : "smooth" });
+      if (opening) scrollInto($(`#ex-${CSS.escape(card.dataset.ex)}`), "nearest", true);
       break;
     }
     case "exAll": {
@@ -1373,7 +1402,7 @@ document.addEventListener("click", e => {
       const { u, date, id } = state.libSwapFor; const item = todaysList(u, date).find(x => x.ex.id === id); if (!item) break;
       const v = `lib:${el.dataset.id}`; const def = defOf(item.ex, v);
       putDraft(u, date, id, { variant: v, ...prefillSets(u, { sr: def.sr, kind: def.kind }, id, v) });
-      closeOverlay(); render(); setTimeout(() => document.getElementById(`ex-${id}`)?.scrollIntoView({ block: "center" }), 50); break;
+      closeOverlay(); render(); setTimeout(() => scrollInto(document.getElementById(`ex-${id}`), "center"), 50); break;
     }
     case "libF": { state.libF[el.dataset.k] = el.dataset.v; store.set("twp-libf", state.libF); render(); break; }
     case "libFocus": el.setAttribute("aria-pressed", el.getAttribute("aria-pressed") !== "true"); break;
@@ -1381,9 +1410,9 @@ document.addEventListener("click", e => {
       const u = state.viewUser; const a = new Set(aches(u)); a.has(el.dataset.v) ? a.delete(el.dataset.v) : a.add(el.dataset.v);
       save("settings", `aches_${u}`, { areas: [...a] }); break;
     }
-    case "libNew": state.libEdit = "new"; render(); setTimeout(() => $("#lib-form")?.scrollIntoView({ block: "start" }), 30); break;
+    case "libNew": state.libEdit = "new"; render(); setTimeout(() => scrollInto($("#lib-form"), "start"), 30); break;
     case "libSave": saveLibrary(); break;
-    case "libEdit": state.libEdit = el.dataset.id; render(); setTimeout(() => $("#lib-form")?.scrollIntoView({ block: "start" }), 30); break;
+    case "libEdit": state.libEdit = el.dataset.id; render(); setTimeout(() => scrollInto($("#lib-form"), "start"), 30); break;
     case "libCancel": state.libEdit = null; render(); break;
     case "libDelete": {
       const id = el.dataset.id; const m = libItem(id);
@@ -1430,7 +1459,7 @@ document.addEventListener("click", e => {
     case "saveCheckin": saveCheckin(); focusSaved(); render(); break;
     case "viewUser": state.viewUser = el.dataset.u; state.confirmDel = null; render(); break;
     case "progTab": state.progTab = v; render(); break;
-    case "bmPick": state.bmSel = v; render(); if (el.tagName === "path") document.querySelector(".bm-sel")?.scrollIntoView({ block: "nearest", behavior: A.reduceMotion() ? "auto" : "smooth" }); break;
+    case "bmPick": state.bmSel = v; render(); if (el.tagName === "path") scrollInto(document.querySelector(".bm-sel"), "nearest", true); break;
     case "bmMode": state.bmMode = v; store.set("twp-bm-mode", v); render(); break;
     case "bmShapeToggle": state.bmShapeOpen = !el.parentElement.open; break;
     case "bmShape": {
@@ -1510,7 +1539,16 @@ document.addEventListener("focusout", () => {
   kbT = setTimeout(() => { if (isTyping(document.activeElement)) return; document.body.classList.remove("kb-open"); repin(); }, 120);
 });
 // The page itself never scrolls (only the middle does), so after the keyboard closes, snap it back to the top.
-function repin() { window.scrollTo(0, 0); requestAnimationFrame(() => window.scrollTo(0, 0)); }
+function repin() {
+  const reset = () => { if (window.scrollY) window.scrollTo(0, 0); if (document.documentElement.scrollTop) document.documentElement.scrollTop = 0; if (document.body.scrollTop) document.body.scrollTop = 0; };
+  reset(); requestAnimationFrame(reset);
+}
+// If anything still shifts the app's frame (the page, html or body: they never scroll), put it back.
+// Element scroll events don't bubble, so listen in the capture phase.
+document.addEventListener("scroll", e => {
+  const t = e.target;
+  if ((t === document || t === document.documentElement || t === document.body) && !isTyping(document.activeElement)) repin();
+}, { capture: true, passive: true });
 window.visualViewport?.addEventListener("resize", () => { if (!isTyping(document.activeElement)) { document.body.classList.remove("kb-open"); repin(); } });
 document.getElementById("tabs").addEventListener("click", e => { const b = e.target.closest("button[data-view]"); if (b) go(b.dataset.view); });
 document.getElementById("who").addEventListener("click", openSettings);
