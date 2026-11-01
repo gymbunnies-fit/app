@@ -50,7 +50,11 @@ export function summary(eff) {
   if (eff.supports.has("heat")) bits.push("tips for staying cool");
   if (eff.supports.has("sun")) bits.push("a reminder to train out of the sun");
   if (eff.limits.size) bits.push("safer versions of some exercises");
-  if (eff.seated) bits.push("seated options where they exist");
+  if (eff.seated) bits.push("seated versions of exercises where they exist");
+  if (eff.maxSets) bits.push(`up to ${eff.maxSets} sets of each move`);
+  if (eff.balance) bits.push("a short balance practice");
+  if (eff.supports.has("stretch")) bits.push("a daily stretch reminder");
+  if (eff.minutes) bits.push(`a weekly goal of ${eff.minutes} active minutes`);
   return bits.length ? `The app will add ${listText(bits)}.` : "";
 }
 // "Why this plan": the rules and the sources behind them.

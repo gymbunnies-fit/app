@@ -499,7 +499,32 @@ export const HOME_MOVES = [
     [["elbows", "Elbow irritation", "Smooth reps and don't snap to lockout."]]),
   BAND("band-pallof", "Band Pallof Press", ["core"], "rotation", [1, 1, 0], "standing", { lowerBack: 1 }, "3 × 10 per side",
     "Band anchored at chest height to your side. Hold it at your chest and press straight out, resisting the twist. Pull back in.",
-    [["lowerBack", "Twisting", "Brace your stomach and keep your hips square."]])
+    [["lowerBack", "Twisting", "Brace your stomach and keep your hips square."]]),
+  // Seated moves: a sturdy chair (or a wheelchair with the brakes on). For seated plans and anyone who needs to sit.
+  BW("bw-seated-march", "Seated March", ["core"], "core", [1, 1, 0], "seated", { hips: 1 }, "3 × 30 sec",
+    "Sit tall near the front of a sturdy chair, hands on the sides of the seat. Lift one knee a few inches, lower it, then the other, in a steady march.",
+    [["lowerBack", "Slumping", "Sit tall and brace your stomach. Smaller lifts are fine."]], { kind: "time" }),
+  BW("bw-seated-leg-ext", "Seated Leg Extension", ["legs"], "isolation", [1, 1, 0], "seated", { knees: 1 }, "3 × 12 per leg",
+    "Sit tall in a chair. Straighten one knee until your leg is level, squeeze your thigh for a second, and lower slowly. Add an ankle weight later.",
+    [["knees", "Kneecap pain", "Stop just short of locking the knee and move slowly."]], { uni: true }),
+  BW("bw-seated-calf", "Seated Heel Raise", ["calves"], "isolation", [1, 1, 0], "seated", { ankles: 1 }, "3 × 15",
+    "Sit with feet flat. Lift your heels as high as you can, pause, and lower. Rest a weight or your hands on your knees for more.",
+    [["ankles", "Achilles strain", "Slow and controlled."]]),
+  BAND("band-seated-chest", "Seated Band Chest Press", ["chest"], "push", [1, 2, 0], "seated", { shoulders: 1, elbows: 1, wrists: 1 }, "3 × 12–15",
+    "Sit tall with the band around the chair back (or your upper back), handles at chest height. Press straight forward, then return slowly.",
+    [["shoulders", "Shoulder strain", "Elbows slightly below shoulder height."]]),
+  BAND("band-seated-curl", "Seated Band Curl", ["arms"], "isolation", [1, 1, 0], "seated", { elbows: 1 }, "3 × 12–15",
+    "Sit tall with the band under both feet (or under the chair legs). Elbows at your sides, curl the handles up and lower slowly.",
+    [["elbows", "Inner-elbow strain", "Slow on the way down."]]),
+  BAND("band-seated-pushdown", "Seated Band Triceps Pushdown", ["arms"], "isolation", [1, 1, 0], "seated", { elbows: 1 }, "3 × 12–15",
+    "Anchor the band high in a door and sit facing it. Elbows pinned at your sides, push down until your arms are straight.",
+    [["elbows", "Elbow irritation", "Smooth reps; don't snap to lockout."]]),
+  BAND("band-seated-pull-apart", "Seated Band Pull-Apart", ["shoulders", "back"], "isolation", [1, 1, 0], "seated", { shoulders: 1 }, "3 × 15",
+    "Sit tall and hold the band at shoulder height, arms straight. Pull it apart until it touches your chest, then return slowly.",
+    [["shoulders", "Front-shoulder strain", "Soft elbows and a light band."]]),
+  BAND("band-seated-lat", "Seated Band Pulldown", ["back"], "pull", [1, 2, 0], "seated", { shoulders: 1, elbows: 1 }, "3 × 12–15",
+    "Anchor the band high in a door and sit facing it. Pull your elbows down to your sides and squeeze your shoulder blades, then let the band rise slowly.",
+    [["shoulders", "Shrugging", "Shoulders down away from your ears."]])
 ];
 BUILTIN.push(...HOME_MOVES);
 

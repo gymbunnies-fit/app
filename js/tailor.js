@@ -34,7 +34,27 @@ const BALANCE = /lunge|split squat|single-leg|step-up|bulgarian|walking/i;
 // Spine bending and twisting under load (osteoporosis): sit-ups, crunches, twists, and lifting from the floor.
 const SPINE_FLEX = /crunch|sit-up|situp|russian twist|woodchop|toe touch|v-up|side bend|bicycle|jackknife|roll-up|rollup|good morning|(?<!romanian |single-leg |stiff-leg )deadlift|toes to bar/i;
 
+// Lying flat on your back (pregnancy after about 20 weeks). Incline benches are fine.
+const SUPINE = /bench press|flat bench|skull|pullover|dead bug|glute bridge|hip thrust|crunch|sit-up|situp|lying|floor press|leg raise|dumbbell fly|flat fly/i;
+// Loaded end-of-range positions (hypermobility): deep stretches under load, dips, overhead lockouts.
+const END_RANGE = /\bfly\b|(?<!reverse )pec deck|\bdip|pullover|deep|sissy|jefferson|good morning|deficit|pistol|cossack|bulgarian|behind the neck|stretch/i;
+// Free weights over the face or head (seizures): dumbbells or a barbell pressed lying down or overhead.
+// Moves anyone can do sitting on a bench or chair, so a seated plan keeps them (the Workout tab says to sit).
+export const SEATABLE = /(dumbbell|db|hammer|bicep|concentration) curl|hammer curl|lateral raise|front raise|shrug|(dumbbell|overhead) tri(cep|ceps)? extension/i;
+const FREE = /dumbbell|barbell|\bdb\b|ez[- ]?bar|kettlebell|skull/i;
 const FLOOR_TEXT = /lie flat|lie on your back|on your back|on the floor|on all fours|face ?down on the floor/i;
+// Body position when the library doesn't say: plan moves are named after machines or free-weight lifts.
+export function guessPosition(name, text = "") {
+  const t = `${name} ${text}`;
+  if (/seated|sitting/i.test(name)) return "seated";
+  if (FLOOR.test(name) || FLOOR_TEXT.test(text)) return "floor";
+  if (/hip thrust|bench press|incline|decline|lying|skull|pullover|chest-supported|chest supported/i.test(name)) return "lying";
+  if (/bent[- ]over|bent row|single-arm row|one-arm row|back extension(?! machine)|hyperextension/i.test(name)) return "bent";
+  if (/squat|lunge|deadlift|\brdl\b|step|carry|walk|calf raise|\bdips?\b|pull-up|pullup|chin-up|negative|shrug|thruster|standing|farmer|suitcase/i.test(name)) return "standing";
+  if (/machine|leg press|leg curl|leg extension|pulldown|chest press|pec deck|preacher|rotary|calf extension|abduct|adduct|\bmts\b|arm curl|triceps press/i.test(t)) return "seated";
+  if (/cable|pushdown|face pull|lateral raise/i.test(name)) return "standing";
+  return null;
+}
 function facts(c) {
   const name = c.name;
   return {
@@ -44,6 +64,9 @@ function facts(c) {
     overhead: OVERHEAD.test(name) || ((c.focus || [])[0] === "shoulders" && c.pattern === "push"),
     grip: GRIP.test(name),
     spineFlex: SPINE_FLEX.test(name),
+    position: c.position || guessPosition(name, c.text || ""),
+    supine: SUPINE.test(name) || /lie on your back|on your back/i.test(`${c.text || ""} ${c.how || ""}`),
+    endRange: !/reverse/i.test(name) && (END_RANGE.test(name) || (OVERHEAD.test(name) && !/machine|\bmts\b|pulldown|assist/i.test(name))),
     balance: c.unilateral != null ? (c.unilateral && /standing|lunge|split|step/i.test(name + (c.position || ""))) || BALANCE.test(name) : BALANCE.test(name),
     difficulty: c.difficulty || 0
   };
@@ -64,12 +87,17 @@ function cost(c, prof) {
   if (L.has("grip") && f.grip) { n += 10; why.push("grip"); }
   if (L.has("balance") && f.balance) { n += 10; why.push("balance"); }
   if (L.has("noSpineFlex") && f.spineFlex) { n += 20; why.push("noSpineFlex"); }
+  if (L.has("seated") && f.position && f.position !== "seated" && !SEATABLE.test(c.name)) { n += f.position === "lying" ? 8 : 20; why.push("seated"); }
+  if (L.has("noSupine") && f.supine) { n += 20; why.push("noSupine"); }
+  if (L.has("noEndRange") && f.endRange) { n += 12; why.push("noEndRange"); }
+  if (L.has("secureLoad") && (c.equip ? ["dumbbell", "barbell"].includes(c.equip) : FREE.test(c.name)) && (f.overhead || (/press|skull|pullover|\bfly/i.test(c.name) && (f.position === "lying" || f.supine)))) { n += 15; why.push("secureLoad"); }
   if (prof.experience === "new" && f.difficulty >= 3) n += 5;
   return { n, why };
 }
 
 const AREA_WORD = a => (PAIN_AREAS[a] || a).toLowerCase();
-const LIMIT_WHY = { noFloor: "no floor work", noImpact: "no jumping", noOverhead: "nothing overhead", noSpine: "less load on your back", grip: "easier on your grip", balance: "more stable", noSpineFlex: "easier on your spine" };
+const LIMIT_WHY = { noFloor: "no floor work", noImpact: "no jumping", noOverhead: "nothing overhead", noSpine: "less load on your back", grip: "easier on your grip", balance: "more stable", noSpineFlex: "easier on your spine",
+  seated: "done seated", noSupine: "not lying on your back", noEndRange: "keeps your joints mid-range", secureLoad: "no free weights over your face" };
 function reason(fixed) {
   const areas = fixed.filter(x => PAIN_AREAS[x]).map(AREA_WORD);
   const lims = fixed.filter(x => LIMIT_WHY[x]).map(x => LIMIT_WHY[x]);
@@ -117,7 +145,8 @@ export function tailorPlan(prof, { lib = BUILTIN, exercises = Object.values(ALL_
     const cands = [];
     const add = (v, c, bias) => { if (c) cands.push({ v, c, bias }); };
     const std = safetyFor(ex, "std");
-    add("std", { name: ex.n, text: `${ex.setup || ""} ${ex.how || ""}`, focus: ex.focus, pattern: patternOf(ex), ...(std || {}) }, 0);
+    const machine = FREE.test(ex.n) ? null : lib.find(b => b.id === (PLAN_MACHINES[ex.id] || [])[0]);
+    add("std", { name: ex.n, text: `${ex.setup || ""} ${ex.how || ""}`, focus: ex.focus, pattern: patternOf(ex), ...(machine?.position ? { position: machine.position } : {}), ...(std || {}) }, 0);
     if (ex.swap) add("swap", { name: ex.swap.n, text: ex.swap.how || "", ...(safetyFor(ex, "swap") || {}) }, 1);
     if (ex.h) add("hard", { name: ex.h.n, text: ex.h.how || "", ...(safetyFor(ex, "hard") || {}) }, wantsHarder ? -2 : 4);
     const same = new Set(PLAN_MACHINES[ex.id] || []);
@@ -128,7 +157,7 @@ export function tailorPlan(prof, { lib = BUILTIN, exercises = Object.values(ALL_
     const base = scored[0];
     let best = scored.slice().sort((a, b) => a.total - b.total)[0];
     // Still breaking a hard limit (floor, impact, overhead)? Look wider: any library move for the same muscles.
-    if (best.why.some(w => ["noFloor", "noImpact", "noOverhead", "noSpineFlex"].includes(w))) {
+    if (best.why.some(w => ["noFloor", "noImpact", "noOverhead", "noSpineFlex", "seated", "noSupine", "secureLoad"].includes(w))) {
       const more = libraryFor(ex, lib, null).filter(b => !same.has(b.id) && !cands.some(c => c.v === `lib:${b.id}`)).map(b => ({ v: `lib:${b.id}`, c: b, bias: 5 }));
       scored = [...scored, ...score(more)];
       best = scored.slice().sort((a, b) => a.total - b.total)[0];

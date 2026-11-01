@@ -12,6 +12,7 @@ const del = k => { try { ls()?.removeItem(k); } catch { /* blocked */ } };
 
 const recKey = (uid, pid) => `gbh-${uid}-${pid}`;
 const dayKey = (uid, pid) => `gbh-energy-${uid}-${pid}`;
+const logKey = (uid, pid) => `gbh-log-${uid}-${pid}`;
 const memo = new Map(); // key -> { v, eff }
 
 export function load(uid, pid) {
@@ -22,11 +23,11 @@ export function load(uid, pid) {
 }
 export function save(uid, pid, rec) {
   if (!uid || !pid) return;
-  const clean = rec && ((rec.conditions || []).length || (rec.symptoms || []).length || Object.values(rec.fn || {}).some(Boolean)) ? { v: 1, ...rec, savedAt: Date.now() } : null;
+  const clean = rec && ((rec.conditions || []).length || (rec.symptoms || []).length || Object.values(rec.fn || {}).some(Boolean)) ? { v: 1, ...rec, firstAt: load(uid, pid)?.firstAt || rec.firstAt || Date.now(), savedAt: Date.now() } : null;
   if (clean) write(recKey(uid, pid), clean); else del(recKey(uid, pid));
   memo.set(recKey(uid, pid), { v: clean, eff: null });
 }
-export function clear(uid, pid) { del(recKey(uid, pid)); del(dayKey(uid, pid)); memo.delete(recKey(uid, pid)); }
+export function clear(uid, pid) { del(recKey(uid, pid)); del(dayKey(uid, pid)); del(logKey(uid, pid)); memo.delete(recKey(uid, pid)); }
 // Everything this account keeps on this phone (all profiles). Used by "Remove from this phone".
 export function clearAll(uid) {
   const s = ls(); if (!s || !uid) return;
@@ -51,4 +52,15 @@ export function setEnergy(uid, pid, date, level) {
 export function lightDays(uid, pid) {
   const all = read(dayKey(uid, pid)) || {};
   return new Set(Object.keys(all).filter(d => all[d] === "low" || all[d] === "flare"));
+}
+
+// Small daily notes, also only on this phone: balance practice level and days, daily stretch days, and whether
+// symptoms settled after a workout. { bal: 0-3, balDays: { date: 1 }, stretch: { date: 1 }, settle: { date: "yes"|"no" } }
+const DATED = ["balDays", "stretch", "settle"];
+export function log(uid, pid) { return { bal: 0, balDays: {}, stretch: {}, settle: {}, ...(read(logKey(uid, pid)) || {}) }; }
+export function setLog(uid, pid, fn) {
+  if (!uid || !pid) return;
+  const l = log(uid, pid); fn(l);
+  for (const k of DATED) { const keep = Object.keys(l[k] || {}).sort().slice(-60); l[k] = Object.fromEntries(keep.map(d => [d, l[k][d]])); }
+  write(logKey(uid, pid), l);
 }

@@ -14,6 +14,7 @@ import { BUNNIES, bunnySvg, isBunny } from "./bunnies.js";
 import * as H from "./health.js";
 import * as C from "./conditions.js";
 import * as TL from "./tailor.js";
+import { dayLevel, doseCap, flareDays, healthCard, onHealthDayClick } from "./views/healthday.js";
 import { onHealthClick, onHealthInput, openHealthEdit } from "./views/healthform.js";
 import { BUILTIN, GYM, PLAN_MACHINES, EQUIP, PATTERN, JOINTS, POSITION, LEVEL, PLAN_PATTERN, STRETCH_BY_FOCUS, normalizeLib } from "./library.js";
 import { connect, save, remove, patch, dropField, signOutAndClear, importAll, COLLECTIONS, watchAuth, signInGoogle, signInEmail, createEmailAccount, resetPassword, addGoogle, addPassword, currentInfo,
@@ -34,7 +35,7 @@ import { focusSaved, openKey, stretchBox, viewToday } from "./views/workout.js";
 
 // ---------------------------------------------------------------- helpers
 // Shown at the bottom of Settings so you can tell whether a phone has the latest update. Bump with sw.js VERSION.
-const APP_VERSION = "66";
+const APP_VERSION = "67";
 // The app's name lives here only (plus app-v41.webmanifest and the <title> tags in index.html, which can't read JS).
 const APP_NAME = "GymBunnies.fit";
 const $ = (s, r = document) => r.querySelector(s);
@@ -160,7 +161,7 @@ function localTailor(u) {
 }
 const tailorFor = (u, id) => localTailor(u)[id] || P(u).tailor?.[id] || null;
 // No automatic "try a heavier weight" when someone paces, or on a low or flare-up day.
-const noAutoUp = (u, date = TODAY()) => hEff(u)?.progression === "pace" || ["low", "flare"].includes(hEnergy(u, date));
+const noAutoUp = (u, date = TODAY()) => hEff(u)?.progression === "pace" || ["low", "flare"].includes(dayLevel(u, date));
 const curWeek = () => state.sel?.week || S.cycleInfo(TODAY(), cycleStart()).week;
 function daysFor(u, week = curWeek()) { const w = progOf(u)[week]; return w ? w.map(d => d.key) : DAYS; }
 function planDay(u, week, day) {
@@ -420,8 +421,15 @@ const editKey = (u, date, id) => `${u}|${date}|${slotKey()}|${id}`;
 function prefillSets(u, def, id, v, date = LD()) {
   const dl = deloadActive(u, date) ? x => ({ ...x, sets: lightSets(x.sets, def.db) }) : x => x;
   // Energy check (this phone only): fewer sets and lighter weights on so-so, low and flare-up days.
-  const lvl = hEnergy(u, date); const E = lvl && C.ENERGY[lvl === "flare" && hEff(u)?.flare === "cutback" ? "low" : lvl];
-  const light = !E || !E.sets ? dl : x => { const y = dl(x); const n = Math.max(1, y.sets.length + E.sets); return { ...y, sets: y.sets.slice(0, n).map(s => ({ ...s, w: E.weight < 1 ? roundTo((+s.w || 0) * E.weight, def.db ? 2.5 : 5) : s.w })) }; };
+  // Energy check and "did it settle?" (this phone only): fewer sets and lighter weights on so-so, low and flare-up days.
+  const lvl = dayLevel(u, date); const E = lvl && C.ENERGY[lvl === "flare" && hEff(u)?.flare === "cutback" ? "low" : lvl];
+  const cap = doseCap(u); // guideline dose: at most 2 sets (gentle and paced plans), 1 while starting small
+  const light = x => {
+    let y = dl(x);
+    if (E && E.sets) { const n = Math.max(1, y.sets.length + E.sets); y = { ...y, sets: y.sets.slice(0, n).map(s => ({ ...s, w: E.weight < 1 ? roundTo((+s.w || 0) * E.weight, def.db ? 2.5 : 5) : s.w })) }; }
+    if (cap && y.sets.length > cap) y = { ...y, sets: y.sets.slice(0, cap) };
+    return y;
+  };
   const skip = hEff(u) ? H.lightDays(state.auth.user.uid, u) : null;
   const last = S.lastTime(state.data.sessions.filter(s => (!deloadActive(u, s.date) && !skip?.has(s.date)) || s.date === date), u, id, v);
   const { sets, min, max } = S.parseRange(def.sr || "3 × 10");
@@ -883,25 +891,6 @@ function avatarGrid(cur, attrs, name = "A", color = "") {
   return `<div class="field"><span>Bunnies</span><div class="avatars">${Object.entries(BUNNIES).map(([id, x]) => b(`bun:${id}`, `<span class="av has-bun" style="--c:${esc(color || "var(--accent)")}" aria-hidden="true">${bunnySvg(id)}</span>`, x.n)).join("")}</div></div>
     <div class="field"><span>More</span><div class="avatars">${b("", esc((name || "A")[0].toUpperCase()), "Your first initial")}${AVATARS.map(x => b(x, x)).join("")}</div></div>`;
 }
-// On the Workout tab, for someone whose health answers are on this phone: the energy check and today's tips.
-function healthCard(u, date) {
-  const e = hEff(u); if (!e || date !== TODAY()) return "";
-  const lvl = hEnergy(u, date);
-  const ask = `<div class="seg" role="group" aria-label="Energy today">${Object.entries(C.ENERGY).map(([k, x]) => `<button type="button" data-act="hEnergy" data-v="${k}" aria-pressed="${lvl === k}">${esc(x.label)}</button>`).join("")}</div>`;
-  const flareText = C.FLARE[e.flare || "pause"];
-  const said = lvl === "flare" ? flareText : C.ENERGY[lvl]?.text || "";
-  const tips = [
-    e.supports.has("heat") ? "Keep cool: a cool room or a fan, cold water during the workout, and cardio at a cooler time of day. If a symptom flares with heat, it settles as you cool down." : "",
-    e.supports.has("sun") ? "Train indoors, or early or late in the day, out of strong sun." : "",
-    e.progression === "pace" ? "Stop while you still feel OK. The app won't raise weights or time for you." : ""
-  ].filter(Boolean);
-  return `<section class="card hf-today" aria-labelledby="hf-today-t">
-    <div class="between"><h2 class="h3" id="hf-today-t">${lvl ? `Energy today: ${esc(C.ENERGY[lvl].label)}` : "How's your energy today?"}</h2>${lvl ? `<button type="button" class="btn small" data-act="hEnergy" data-v="">Change</button>` : ""}</div>
-    ${lvl ? (said ? `<p>${esc(said)}</p>` : "") + (lvl !== "good" ? `<p class="small muted">Exercises you haven't started yet are set up for today.</p>` : "") + (lvl === "flare" ? `<button class="btn small" data-act="goView" data-v="stretch">Gentle stretching instead</button>` : "") : ask}
-    ${tips.length ? `<ul class="small hf-tips">${tips.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
-    <p class="small muted"><span aria-hidden="true">🔒</span> Only on this phone.</p>
-  </section>`;
-}
 function saveProfile(id, fields) {
   const exists = state.data.profiles.some(p => p.id === id);
   const base = exists ? {} : (({ id: _i, updatedAt: _u, ...rest }) => rest)(P(id));
@@ -1125,7 +1114,7 @@ function funHeader(u) {
   if (!funAt("medium", u) && !funAt("light", u)) return "";
   const parts = [];
   if (funAt("medium")) {
-    const st = F.streaks(state.data.sessions, u, TODAY(), paceOf(u), bonusDates(u));
+    const st = F.streaks(state.data.sessions, u, TODAY(), paceOf(u), [...bonusDates(u), ...flareDays(u)]);
     parts.push(`<div class="stat-tile"><div class="st-top">${icon("flame", 18, { stroke: 2 })}<span class="big-num">${st.current}</span><span class="st-unit">week${st.current === 1 ? "" : "s"}</span></div><div class="st-sub">streak · ${st.thisWeek} of ${st.need}+ this week</div></div>`);
   }
   if (funAt("full")) {
@@ -1402,6 +1391,7 @@ document.addEventListener("click", e => {
   if (act.startsWith("hf") && onHealthClick(act, el)) return;
   if (act === "hEnergy") { H.setEnergy(state.auth.user.uid, LU(), TODAY(), v || null); render(); return; }
   if (act === "hOpen") { openHealthEdit(); return; }
+  if (act.startsWith("hDay") && onHealthDayClick(act, el)) return;
   switch (act) {
     case "newProfile": openOnboarding(null); break;
     case "obRetake": openOnboarding(state.user); break;
@@ -2065,7 +2055,7 @@ if ("serviceWorker" in navigator) {
 // ---------------------------------------------------------------- updates
 // Every time the app opens (or comes back to the front), ask the server which version is live.
 // If it's newer than this copy, throw the old copy away and reload. No buttons needed.
-const SHELL_FILES = ["./", "index.html", "css/styles.css", "js/app.js", "js/plan.js", "js/stats.js", "js/firebase.js", "js/library.js", "js/fun.js", "js/safety.js", "js/timer.js", "js/a11y.js", "js/icons.js", "js/tailor.js", "js/program.js", "js/stretch.js", "js/anatomy.js", "js/equipment.js", "js/muscles.js", "js/exsearch.js", "js/bunnies.js", "js/health.js", "js/conditions.js", "js/views/healthform.js", "js/views/areas.js", "js/views/bodymap.js", "js/views/body.js", "js/views/crew.js", "js/views/feedback.js", "js/views/gyms.js", "js/views/import.js", "js/views/after.js", "js/importer.js", "js/views/progress.js", "js/views/questionnaire.js", "js/views/review.js", "js/views/settings.js", "js/views/stretch.js", "js/views/usage.js", "js/views/workout.js", "app-v41.webmanifest", "sw.js"];
+const SHELL_FILES = ["./", "index.html", "css/styles.css", "js/app.js", "js/plan.js", "js/stats.js", "js/firebase.js", "js/library.js", "js/fun.js", "js/safety.js", "js/timer.js", "js/a11y.js", "js/icons.js", "js/tailor.js", "js/program.js", "js/stretch.js", "js/anatomy.js", "js/equipment.js", "js/muscles.js", "js/exsearch.js", "js/bunnies.js", "js/health.js", "js/conditions.js", "js/views/healthform.js", "js/views/healthday.js", "js/views/areas.js", "js/views/bodymap.js", "js/views/body.js", "js/views/crew.js", "js/views/feedback.js", "js/views/gyms.js", "js/views/import.js", "js/views/after.js", "js/importer.js", "js/views/progress.js", "js/views/questionnaire.js", "js/views/review.js", "js/views/settings.js", "js/views/stretch.js", "js/views/usage.js", "js/views/workout.js", "app-v41.webmanifest", "sw.js"];
 async function liveVersion() {
   try { const r = await fetch(`sw.js?check=${Date.now()}`, { cache: "no-store" }); const m = /VERSION = "twp-v(\d+)"/.exec(await r.text()); return m ? m[1] : null; } catch { return null; }
 }

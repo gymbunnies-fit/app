@@ -82,7 +82,7 @@ function openSettings() {
       return `<section class="card" aria-labelledby="hf-set-t"><h3 class="h3" id="hf-set-t"><span aria-hidden="true">🔒</span> Health conditions</h3>
       <p class="small">${e ? esc(e.conditions.map(c => c.name).join(", ") || "Symptoms picked, no conditions.") + " " + esc(healthSummary(e)) : "None added. Add any conditions and the plan follows the published exercise guidelines for each."}</p>
       <p class="small muted">${esc(PRIVACY_LINE)}</p>
-      <div class="row"><button class="btn small primary" data-act="hOpen">${e ? "Change" : "Add conditions"}</button>${e ? `<button class="btn small danger" data-act="hfRemoveAll">${state.confirmDel === "health" ? "Tap again to remove" : "Remove from this phone"}</button>` : ""}</div>
+      <div class="row"><button class="btn small primary" data-act="hOpen">${e ? "Change" : "Add conditions"}</button>${e ? `<button class="btn small" data-act="hDayShare">Share my plan</button>` : ""}${e ? `<button class="btn small danger" data-act="hfRemoveAll">${state.confirmDel === "health" ? "Tap again to remove" : "Remove from this phone"}</button>` : ""}</div>
       ${e?.clearance.length ? `<p class="small"><b>Before you start:</b> ${e.clearance.map(esc).join(" ")}</p>` : ""}
       ${e?.conditions.length ? `<h4 class="h3">Why this plan</h4>${whyHtml(e)}` : ""}</section>`; })()}
     <section class="card"><h3 class="h3">Who's using this phone</h3>${personToggle("pickUser", u)}

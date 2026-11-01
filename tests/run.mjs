@@ -522,6 +522,58 @@ for (const b of BUILTIN) {
   const citems = C.CONDITIONS.map(c => ({ id: c.id, name: c.name, tags: c.tags }));
   for (const [q, id] of [["fibro", "fibro"], ["SLE", "lupus"], ["ms", "ms"], ["CFS", "mecfs"], ["arthritis", "oa"], ["diabetes", "t2d"], ["osteopenia", "osteo"]])
     eq(`"${q}" finds ${id}`, XS2.searchExercises(q, citems, 1)[0]?.item.id, id);
+  for (const [q, id] of [["POTS", "pots"], ["Crohn's", "ibd"], ["hEDS", "eds"], ["TKR", "jointrep"], ["pregnant", "preg"], ["CHF", "heart"], ["high blood pressure", "htn"], ["sciatica", "lbp"], ["seizures", "epilepsy"], ["dialysis", "ckd"], ["amputee", "limb"], ["chemo", "cancer"], ["anxiety", "mood"], ["T1D", "t1d"], ["Parkinson's", "pd"], ["cerebral palsy", "cp"], ["COPD", "copd"], ["asthma", "asthma"], ["migraine", "migraine"], ["stroke", "stroke"], ["SCI", "sci"]])
+    eq(`"${q}" finds ${id}`, XS2.searchExercises(q, citems, 1)[0]?.item.id, id);
+  // every profile is complete and sourced
+  eq("30 condition profiles", C.CONDITIONS.length, 30);
+  eq("condition ids are unique", new Set(C.CONDITIONS.map(c => c.id)).size, C.CONDITIONS.length);
+  for (const c of C.CONDITIONS) {
+    yes(`${c.id}: has a name, tags and a plan`, c.name && c.tags.length >= 2 && c.plan.length >= 1);
+    yes(`${c.id}: every source is a real https link`, c.sources.length >= 1 && c.sources.every(x => /^https:\/\/\S+$/.test(x.url) && x.t));
+    yes(`${c.id}: rules are known`, ["build", "gentle", "pace"].includes(c.progression) && ["cutback", "pause", "pace"].includes(c.flare) && c.supports.every(x => C.SUPPORTS[x]));
+    for (const f of c.followUps) yes(`${c.id}.${f.id}: every answer is an option`, Object.keys(f.effects).every(k => f.options.some(o => o[0] === k)) && f.effects && Object.values(f.effects).every(e => (e.supports || []).every(x => C.SUPPORTS[x])));
+  }
+  yes("every support with limits uses known limit keys", Object.values(C.SUPPORT_LIMITS).flat().every(l => ["noFloor", "noImpact", "noOverhead", "noSpine", "grip", "balance", "noSpineFlex", "seated", "noSupine", "noEndRange", "secureLoad"].includes(l)));
+  // batch 2-5 rules
+  const fx = (conditions, answers = {}, extra = {}) => C.effectsOf({ conditions, answers, symptoms: [], fn: {}, ...extra });
+  yes("pregnancy after 20 weeks: not lying on your back, no impact", fx(["preg"], { "preg.stage": "late" }).limits.has("noSupine") && fx(["preg"], { "preg.stage": "late" }).limits.has("noImpact"));
+  yes("early pregnancy: no lying-down limit", !fx(["preg"], { "preg.stage": "early" }).limits.has("noSupine"));
+  yes("told to limit activity in pregnancy: plan stops building", fx(["preg"], { "preg.limit": "yes" }).progression === "pace");
+  yes("spinal cord injury: seated plan", fx(["sci"]).seated && fx(["sci"]).limits.has("seated"));
+  eq("spinal cord injury: weekly goal follows the SCI guideline (40 min)", fx(["sci"]).minutes, 40);
+  yes("high SCI adds a stop sign and a clearance note", fx(["sci"], { "sci.high": "yes" }).stop.length === 1 && fx(["sci"], { "sci.high": "yes" }).clearance.length === 1);
+  yes("POTS, dizzy upright: seated or lying cardio", fx(["pots"], { "pots.upright": "yes" }).seated);
+  eq("POTS: up to 2 sets a move", fx(["pots"]).maxSets, 2);
+  yes("ME/CFS: no weekly goal to chase", fx(["mecfs"]).minutes === null);
+  eq("the smallest weekly goal wins", fx(["htn", "cancer"]).minutes, 90);
+  eq("most people: 150 minutes a week", fx(["htn"]).minutes, 150);
+  yes("heart disease: clearance and stop signs", fx(["heart"]).clearance.length && fx(["heart"]).stop.some(x => /911/.test(x)));
+  yes("epilepsy: no free weights over the face", fx(["epilepsy"]).limits.has("secureLoad"));
+  yes("hypermobility: joints stay mid-range", fx(["eds"]).limits.has("noEndRange"));
+  yes("Parkinson's: balance practice on", fx(["pd"]).balance);
+  yes("joint replacement, knee: knees protected, no impact", fx(["jointrep"], { "jointrep.knee": "yes" }).injuries.has("knees") && fx(["jointrep"]).limits.has("noImpact"));
+  yes("low back pain: lower back protected", fx(["lbp"]).injuries.has("lowerBack"));
+  yes("dialysis fistula: arm tip", C.supportTips(fx(["ckd"], { "ckd.fistula": "yes" })).some(t => /fistula/.test(t)));
+  yes("depression: a crisis line in the tips", fx(["mood"]).tips.some(t => /988/.test(t)));
+  yes("wheelchair answer: seated plan", C.effectsOf({ conditions: [], symptoms: [], fn: { aid: "wheelchair" } }).seated);
+  yes("limb loss, a leg: balance support", fx(["limb"], { "limb.which": "leg" }).supports.has("balance"));
+  // tailoring for the new limits
+  const TLh = await import(join(here, "../js/tailor.js"));
+  const { ALL_EX: AXh } = await import(join(here, "../js/plan.js"));
+  const tSeat = TLh.tailorPlan({ limits: ["seated", "noFloor"], injuries: [] });
+  yes("seated plan: Dead Bug is swapped for a seated move", tSeat["a-thu-bug"] && /seated/i.test(tSeat["a-thu-bug"].why));
+  yes("seated plan: split squats become a seated leg move", tSeat["b-wed-split"] && /seated/i.test(tSeat["b-wed-split"].why));
+  yes("seated plan keeps moves you can do sitting (lateral raise)", !tSeat[Object.values(AXh).find(e => /Lateral Raise/.test(e.n))?.id]);
+  yes("guessing position: a Smith RDL is standing, a leg press is seated", TLh.guessPosition("Smith Machine Romanian Deadlift") === "standing" && TLh.guessPosition("Leg Press") === "seated");
+  const tSup = TLh.tailorPlan({ limits: ["noSupine"], injuries: [] });
+  yes("not lying on your back: hip thrusts are swapped", tSup["a-wed-ht"] && tSup["b-wed-ht"]);
+  const tSec = TLh.tailorPlan({ limits: ["secureLoad"], injuries: [] });
+  yes("seizures: incline dumbbell press goes to a machine", /machine/i.test(AXh["b-mon-inc"].swap.n) && tSec["b-mon-inc"]?.v === "swap");
+  yes("seizures: hip thrusts aren't over your face, so they stay", !tSec["b-wed-ht"]);
+  const PGh = await import(join(here, "../js/program.js"));
+  const { BUILTIN: BIh } = await import(join(here, "../js/library.js"));
+  const home = PGh.homeVersion({ limits: ["seated", "noFloor"], injuries: [], homeGear: ["band"] }, Object.values(AXh).filter(e => e.week === "A" && e.day === "Mon").map(e => ({ id: e.id, n: e.n, focus: e.focus })));
+  yes("seated home workout uses only seated moves", home.length >= 3 && home.every(id => BIh.find(b => `lib-${b.id}` === id)?.position === "seated"));
   // on-device storage
   const mem = {}; globalThis.localStorage = { getItem: k => (k in mem ? mem[k] : null), setItem: (k, v) => { mem[k] = String(v); }, removeItem: k => { delete mem[k]; }, key: i => Object.keys(mem)[i], get length() { return Object.keys(mem).length; } };
   Object.defineProperty(globalThis.localStorage, "keys", { value: () => Object.keys(mem) });
@@ -532,6 +584,15 @@ for (const b of BUILTIN) {
   yes("effects come back for the right person", H.effects("u1", "erica")?.conditions[0]?.id === "ms");
   H.setEnergy("u1", "erica", "2026-11-01", "low");
   yes("low days are remembered as light days", H.lightDays("u1", "erica").has("2026-11-01"));
+  const first = H.load("u1", "erica").firstAt;
+  H.save("u1", "erica", { conditions: ["ms", "pd"], answers: {}, symptoms: [], fn: {} });
+  eq("changing conditions keeps the start date (for starting small)", H.load("u1", "erica").firstAt, first);
+  H.setLog("u1", "erica", l => { l.bal = 2; for (let i = 0; i < 70; i++) l.balDays[`2026-0${1 + (i % 9)}-${String(1 + (i % 28)).padStart(2, "0")}x${i}`] = 1; l.settle["2026-10-31"] = "no"; });
+  yes("daily notes stay on the phone under gbh-log-", "gbh-log-u1-erica" in mem && H.log("u1", "erica").bal === 2 && H.log("u1", "erica").settle["2026-10-31"] === "no");
+  yes("daily notes keep only the last 60 days", Object.keys(H.log("u1", "erica").balDays).length === 60);
+  H.clear("u1", "erica");
+  yes("removing health clears the record, energy and daily notes", !Object.keys(mem).some(k => k.includes("erica")));
+  H.save("u1", "erica", { conditions: ["ms"], answers: {}, symptoms: [], fn: {} });
   H.save("u1", "erica", { conditions: [], symptoms: [], fn: {} });
   eq("saving nothing removes the record", mem["gbh-u1-erica"], undefined);
   delete globalThis.localStorage;
@@ -545,7 +606,10 @@ for (const b of BUILTIN) {
   for (const f of [...new Set(files)]) src(f).split("\n").forEach((line, i) => { if (sinks.test(line) && /\b(hEff|hEnergy|planProf|localTailor|H\.\w+|a\.health|state\.hForm|effectsOf|conditions)\b/.test(line) && !/H\.save\(|H\.clear|H\.setEnergy/.test(line)) bad.push(`${f}:${i + 1}`); });
   eq("no health data next to a database or usage write", bad.join(", "), "");
   yes("onboarding never saves health with the profile", !/saveProfile\([^)]*health/.test(src("js/views/questionnaire.js")));
-  yes("usage counting skips health taps", /\^\[tc\]_\(hf\|hEnergy\|hOpen\)/.test(src("js/views/usage.js")));
+  yes("usage counting skips health taps", /\^\[tc\]_\(hf\|hEnergy\|hOpen\|hDay\)/.test(src("js/views/usage.js")));
+  yes("the daily health card imports no database code", !/firebase\.js|usage\.js|feedback\.js/.test(src("js/views/healthday.js")));
+  yes("the daily health card never writes to the database", !/\b(save|patch|saveProfile|track|bump)\s*\(/.test(src("js/views/healthday.js")));
+  yes("Share my plan is built on the phone (no fetch, no links out)", !/fetch\(|navigator\.share|sendBeacon|XMLHttpRequest/.test(src("js/views/healthday.js")));
   yes("backups contain only crew data", /const data = \{ app: "gymbunnies\.fit", exportedAt: new Date\(\)\.toISOString\(\), \.\.\.state\.data \};/.test(src("js/app.js")));
   yes("sign-out keeps health keys (only twp- keys are cleared)", /k\.startsWith\("twp-"\)/.test(src("js/app.js")));
   yes("account deletion clears this account's keys", /k\.includes\(uid\)/.test(src("js/views/settings.js")));
