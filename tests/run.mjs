@@ -338,6 +338,9 @@ for (const b of BUILTIN) {
   eq("a row helps a curl", MU.muscleMatch("Barbell Curl", ["arms"], "Seated Cable Row", ["back"]), 3);
   eq("close-grip press is triceps", MU.musclesOf("Close-Grip Dumbbell Press", ["arms", "chest"]).main, "triceps");
   eq("close-grip pulldown stays lats", MU.musclesOf("Close-Grip Lat Pulldown").main, "lats");
+  eq("an added curl gets the arms area", MU.focusFromName("Preacher Curl").join(), "arms");
+  eq("an added row gets back and shoulders", MU.focusFromName("Chest-Supported Row").join(), "back,shoulders");
+  eq("an unknown name gets no guess", MU.focusFromName("Mystery Machine").length, 0);
   eq("curl described by muscle", MU.musclesText("Barbell Curl", ["shoulders", "arms", "core"]), "the biceps and forearms");
   {
     const { BUILTIN: LB } = await import(join(here, "../js/library.js"));

@@ -8,7 +8,7 @@ import * as ST from "./stretch.js";
 import { icon, play } from "./icons.js";
 import * as S from "./stats.js";
 import * as Q from "./equipment.js";
-import { muscleMatch, musclesText } from "./muscles.js";
+import { focusFromName, muscleMatch, musclesText } from "./muscles.js";
 import { BUILTIN, GYM, PLAN_MACHINES, EQUIP, PATTERN, JOINTS, POSITION, LEVEL, PLAN_PATTERN, STRETCH_BY_FOCUS, normalizeLib } from "./library.js";
 import { connect, save, remove, patch, dropField, signOutAndClear, importAll, COLLECTIONS, watchAuth, signInGoogle, signInEmail, createEmailAccount, resetPassword, addGoogle, addPassword, currentInfo,
   getUserDoc, setUserDoc, createCrew, joinCrew, watchCrew, updateMember, removeMember, renameCrew, newInviteCode,
@@ -28,7 +28,7 @@ import { focusSaved, openKey, stretchBox, viewToday } from "./views/workout.js";
 
 // ---------------------------------------------------------------- helpers
 // Shown at the bottom of Settings so you can tell whether a phone has the latest update. Bump with sw.js VERSION.
-const APP_VERSION = "63";
+const APP_VERSION = "64";
 // The app's name lives here only (plus app-v41.webmanifest and the <title> tags in index.html, which can't read JS).
 const APP_NAME = "GymBunnies.fit";
 const $ = (s, r = document) => r.querySelector(s);
@@ -91,6 +91,15 @@ function allLibrary() {
   return out;
 }
 const libItem = id => allLibrary().find(x => x.id === id);
+// Names match ignoring case, spaces and punctuation, so "Barbell curl" finds "Barbell Curl".
+const nameKey = n => String(n || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+const libByName = name => allLibrary().find(x => nameKey(x.name) === nameKey(name));
+// A new library entry never takes over another one's id (a built-in, or one someone saved earlier).
+function newLibId(name) {
+  const base = slug(name) || "exercise"; const taken = new Set([...BUILTIN.map(b => b.id), ...state.data.library.map(d => d.id)]);
+  let id = base; for (let i = 2; taken.has(id); i++) id = `${base}-${i}`;
+  return id;
+}
 const hiddenBuiltins = () => state.data.library.filter(d => d.hidden && BUILTIN.some(b => b.id === d.id));
 const aches = u => state.data.settings.find(x => x.id === `aches_${u}`)?.areas || [];
 // Which of a person's sore areas an exercise loads: high (2) or some (1).
@@ -709,7 +718,11 @@ function saveLibrary() {
     const [risk, avoid = ""] = rest.split(/\s+—\s+|\s+-\s+/);
     return { area, risk: risk.replace(/\.$/, ""), avoid };
   });
-  const id = state.libEdit !== "new" ? state.libEdit : slug(name);
+  if (state.libEdit === "new") {
+    const have = libByName(name);
+    if (have) { toast(`${have.name} is already in the library. It's open below so you can change it.`); state.libEdit = have.id; render(); setTimeout(() => scrollInto($("#lib-form"), "start"), 30); return; }
+  }
+  const id = state.libEdit !== "new" ? state.libEdit : newLibId(name);
   save("library", id, {
     name, focus, equip: $("#lib-equip").value, pattern: $("#lib-pattern").value, position: $("#lib-position").value, kind: $("#lib-kind").value,
     difficulty: +$("#lib-difficulty").value, effort: +$("#lib-effort").value, impact: +$("#lib-impact").value, sr: $("#lib-sr").value.trim() || "3 × 10",
@@ -765,7 +778,9 @@ const THEMES = {
   arcade: { name: "Arcade", desc: "Chunky pixels, high score.", sw: ["#0a0a12", "#ffd400", "#39ff88"] },
   clean: { name: "Clean Light", desc: "Calm and bright.", sw: ["#f5f6f8", "#3563e9", "#e0662e"] }
 };
-const AVATARS = ["🐺", "🦊", "🐻", "🦁", "🐯", "🦍", "🐂", "🦅", "🐉", "🦈", "🐙", "🦄", "🔥", "⚡", "💪", "🏋️", "🚲", "🌙", "⭐", "🎧"];
+const AVATARS = ["🐰", "🐇", "🐺", "🦊", "🐻", "🐼", "🐨", "🦁", "🐯", "🐱", "🐶", "🦝", "🦦", "🦥", "🦍", "🐂", "🦅", "🦉", "🦩", "🦚", "🦜", "🐸", "🐢",
+  "🐉", "🦖", "🦈", "🐬", "🐳", "🐙", "🦋", "🐝", "🦄", "🌈", "🌸", "🌻", "🌵", "🍄", "🌊", "⛰️", "🌙", "⭐", "☀️", "🔥", "⚡", "💎", "👑",
+  "💪", "🏋️", "🤸", "🧘", "🏊", "🧗", "🚴", "🥊", "🚲", "🎧", "🎸", "🎨", "🎮", "☕", "🥑"];
 const FUN_LEVELS = { light: "Light: record celebrations and badges", medium: "Medium: plus streaks, progress ring, finish screen, and high-fives", full: "Full: plus points, levels, and a weekly leaderboard" };
 const funAt = (lvl, u = state.user) => ({ light: 1, medium: 2, full: 3 })[P(u).fun || "medium"] >= ({ light: 1, medium: 2, full: 3 })[lvl];
 
@@ -1290,7 +1305,7 @@ document.addEventListener("click", e => {
     case "obBack": if (state.ob.step > 0) { state.ob.step--; drawOnboarding(); } break;
     case "obPick": { const k = el.dataset.k; state.ob.a[k] = /^(days|sessionLen)$/.test(k) ? +el.dataset.v : el.dataset.v; drawOnboarding(); break; }
     case "obToggle": { const k = el.dataset.k, arr = state.ob.a[k], i = arr.indexOf(el.dataset.v);
-      if (i >= 0) arr.splice(i, 1); else if (!(k === "goals" && arr.length >= 3)) arr.push(el.dataset.v); else { toast("Pick up to three."); break; }
+      if (i >= 0) arr.splice(i, 1); else arr.push(el.dataset.v);
       drawOnboarding(); $(`#overlay [data-act=obToggle][data-k="${k}"][data-v="${el.dataset.v}"]`)?.focus(); break; }
     case "obNone": state.ob.a[el.dataset.k] = []; drawOnboarding(); break;
     case "obFinish": finishOnboarding(); break;
@@ -1537,7 +1552,7 @@ document.addEventListener("click", e => {
       toast(m?.builtin ? "Hidden. Restore it from the bottom of the exercise library." : "Deleted."); break;
     }
     case "libRestore": remove("library", el.dataset.id); toast("Restored."); break;
-    case "libQuick": { const ex = ALL_EX[el.dataset.id]; save("library", slug(ex.n), { name: ex.n, focus: ex.focus.filter(f => GROUPS.includes(f)), equip: guessEquip(ex.n), pattern: PLAN_PATTERN[ex.id] || "", kind: ex.kind, db: ex.db, sr: ex.sr, how: ex.setup, notes: "" }); toast(`Added ${ex.n}.`); break; }
+    case "libQuick": { const ex = ALL_EX[el.dataset.id]; if (libByName(ex.n)) { toast(`${ex.n} is already in the library.`); break; } save("library", newLibId(ex.n), { name: ex.n, focus: ex.focus.filter(f => GROUPS.includes(f)), equip: guessEquip(ex.n), pattern: PLAN_PATTERN[ex.id] || "", kind: ex.kind, db: ex.db, sr: ex.sr, how: ex.setup, notes: "" }); toast(`Added ${ex.n}.`); break; }
     case "libToday": { const m = libItem(el.dataset.id); addExtra({ id: `lib-${m.id}`, name: m.name, kind: m.kind || "load", db: !!m.db, focus: m.focus || [] }); state.view = "today"; store.set("twp-view", "today"); render(); break; }
     case "libPlan": openAddPlan(el.dataset.id); break;
     case "apSet": state.addPlan[el.dataset.k] = el.dataset.v; drawAddPlan(); break;
@@ -1557,9 +1572,14 @@ document.addEventListener("click", e => {
       const name = $("#cx-name").value.trim(); if (!name) { toast("Give it a name first."); break; }
       const kind = $("#cx-kind").value, db = $("#cx-db").checked;
       if ($("#cx-lib").checked) {
-        const focus = [...document.querySelectorAll("#cx-focus [aria-pressed=true]")].map(b => b.dataset.v);
-        save("library", slug(name), { name, focus, equip: guessEquip(name), pattern: "", kind, db, notes: "", sr: "3 × 10" });
-        addExtra({ id: `lib-${slug(name)}`, name, kind, db, focus });
+        // Already in the library: use that one instead of writing over it or making a second copy.
+        const have = libByName(name);
+        if (have) { addExtra({ id: `lib-${have.id}`, name: have.name, kind: have.kind || "load", db: !!have.db, focus: have.focus || [] }); toast(`${have.name} is already in the library, so that's the one added.`); break; }
+        const picked = [...document.querySelectorAll("#cx-focus [aria-pressed=true]")].map(b => b.dataset.v);
+        const focus = picked.length ? picked : focusFromName(name);
+        const id = newLibId(name);
+        save("library", id, { name, focus, equip: guessEquip(name), pattern: "", kind, db, notes: "", sr: "3 × 10" });
+        addExtra({ id: `lib-${id}`, name, kind, db, focus }); toast(`Added ${name} to today and the library.`);
       } else addExtra({ id: `custom-${slug(name)}`, name, kind, db });
       break;
     }
@@ -1654,6 +1674,20 @@ document.addEventListener("focusout", () => {
   clearTimeout(kbT);
   kbT = setTimeout(() => { if (isTyping(document.activeElement)) return; document.body.classList.remove("kb-open"); repin(); }, 120);
 });
+// Installed on iPhone, the app is exactly the size of the screen. Newer iOS versions can misreport viewport heights
+// (100lvh came out taller than the screen and hid the tab bar's labels), so use the screen's own size instead.
+// navigator.standalone only exists on iPhone and iPad; Android keeps the CSS fallback.
+function sizeShell() {
+  if (navigator.standalone !== true) return;
+  const portrait = matchMedia("(orientation: portrait)").matches;
+  const h = portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
+  const w = portrait ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height);
+  if (Math.abs(innerWidth - w) > 2) { document.documentElement.style.removeProperty("--app-h"); return; } // iPad in a split window
+  if (h > 300) document.documentElement.style.setProperty("--app-h", `${h}px`);
+}
+sizeShell();
+addEventListener("orientationchange", () => setTimeout(sizeShell, 100));
+addEventListener("resize", sizeShell);
 // The page itself never scrolls (only the middle does), so after the keyboard closes, snap it back to the top.
 function repin() {
   const reset = () => { if (window.scrollY) window.scrollTo(0, 0); if (document.documentElement.scrollTop) document.documentElement.scrollTop = 0; if (document.body.scrollTop) document.body.scrollTop = 0; };

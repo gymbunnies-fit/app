@@ -872,7 +872,9 @@ body.shell .sticky-cta{bottom:8px}
 body.shell.kb-open{padding-bottom:0}
 /* Installed on iPhone: after the keyboard closes, iOS can leave the fixed page short of the bottom, with a blank
    band under the tab bar. The installed app always fills the screen, so size it to the screen instead. */
-@media (display-mode:standalone){body.shell:not(.kb-open){bottom:auto;height:100lvh}}
+/* iOS 26 can report 100lvh taller than the screen, which pushed the tab bar's labels off the bottom. On iPhone the
+   app sets --app-h from the real screen size (js/app.js sizeShell); 100lvh is only the fallback elsewhere. */
+@media (display-mode:standalone){body.shell:not(.kb-open){bottom:auto;height:var(--app-h,100lvh)}}
 
 /* feedback */
 .fb-list{list-style:none;margin:0;padding:0;display:grid;gap:10px}

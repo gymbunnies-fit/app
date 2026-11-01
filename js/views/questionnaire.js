@@ -31,7 +31,7 @@ function drawOnboarding() {
   if (step === "name") body = q(o.id ? `Let's update your plan, ${esc(a.name)}` : "Welcome! Let's build your plan.", "A few quick questions so the workouts fit you: your goals, your body, and your schedule. About two minutes.",
     `<label class="field">First name<input type="text" data-ob="name" value="${esc(a.name)}" placeholder="First name" autocomplete="given-name"></label>
      <div class="field"><span>Pick an avatar</span><div class="avatars"><button type="button" data-act="obPick" data-k="avatar" data-v="" aria-pressed="${!a.avatar}">${esc((a.name || "A")[0].toUpperCase())}</button>${AVATARS.map(x => `<button type="button" data-act="obPick" data-k="avatar" data-v="${x}" aria-pressed="${a.avatar === x}">${x}</button>`).join("")}</div></div>`);
-  if (step === "goals") body = q("What do you want out of training?", "Pick up to three.", multi("goals", Object.entries(TL.GOALS)) +
+  if (step === "goals") body = q("What do you want out of training?", "Pick as many as fit.", multi("goals", Object.entries(TL.GOALS)) +
     `<label class="field">Anything else? (optional)<textarea data-ob="goalNote" placeholder="Get ready for a hike, fit into my suit for a wedding…">${esc(a.goalNote)}</textarea></label>`);
   if (step === "focus") body = q("Any body parts you want extra attention on?", "Optional. Leave it blank for a balanced plan.", multi("focus", [...GROUPS.filter(g => g !== "cardio").map(g => [g, FOCUS[g]]), ["full", "Full body"], ["cardio", "Cardio fitness"]]));
   if (step === "experience") body = q("How much have you trained before?", "", single("experience", Object.entries(TL.EXPERIENCE).map(([k, [l, s]]) => [k, l, s]))) +

@@ -78,6 +78,14 @@ export function musclesOf(name, focus = []) {
   return m.length ? { main: m[0], also: [...new Set(m.slice(1))].filter(x => x !== m[0]) } : null;
 }
 
+// The broad focus areas ("arms", "back") a move works, from its name. For exercises people add without picking any.
+const MUSCLE_FOCUS = { chest: "chest", frontDelts: "shoulders", sideDelts: "shoulders", rearDelts: "shoulders", traps: "back", upperBack: "back", lats: "back",
+  lowerBack: "back", biceps: "arms", triceps: "arms", forearms: "arms", abs: "core", obliques: "core", glutes: "glutes", outerHips: "glutes",
+  adductors: "legs", quads: "legs", hamstrings: "legs", calves: "calves" };
+export function focusFromName(name) {
+  const r = RULES.find(x => x.re.test(String(name || ""))); if (!r) return [];
+  return [...new Set([r.main, ...r.also.slice(0, 2)].map(m => MUSCLE_FOCUS[m]))];
+}
 // How well one exercise stands in for another, by the muscles their names point at.
 // 6: same main muscle (a curl for a curl). 3: the other one helps with it (a row for a curl).
 // 1: it only helps with the other's main muscle. 0: nothing in common, so broad areas alone ("arms") can't
