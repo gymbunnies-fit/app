@@ -8,6 +8,7 @@ import * as ST from "./stretch.js";
 import { icon, play } from "./icons.js";
 import * as S from "./stats.js";
 import * as Q from "./equipment.js";
+import { muscleMatch, musclesText } from "./muscles.js";
 import { BUILTIN, GYM, PLAN_MACHINES, EQUIP, PATTERN, JOINTS, POSITION, LEVEL, PLAN_PATTERN, STRETCH_BY_FOCUS, normalizeLib } from "./library.js";
 import { connect, save, remove, patch, dropField, signOutAndClear, importAll, COLLECTIONS, watchAuth, signInGoogle, signInEmail, createEmailAccount, resetPassword, addGoogle, addPassword, currentInfo,
   getUserDoc, setUserDoc, createCrew, joinCrew, watchCrew, updateMember, removeMember, renameCrew, newInviteCode,
@@ -27,7 +28,7 @@ import { focusSaved, openKey, stretchBox, viewToday } from "./views/workout.js";
 
 // ---------------------------------------------------------------- helpers
 // Shown at the bottom of Settings so you can tell whether a phone has the latest update. Bump with sw.js VERSION.
-const APP_VERSION = "62";
+const APP_VERSION = "63";
 // The app's name lives here only (plus app-v41.webmanifest and the <title> tags in index.html, which can't read JS).
 const APP_NAME = "GymBunnies.fit";
 const $ = (s, r = document) => r.querySelector(s);
@@ -410,7 +411,7 @@ function gymAlternative(ex, v, g, u = LU()) {
   if (first) return first;
   const pattern = PLAN_PATTERN[ex.id] || "", focus = ex.focus || [];
   const best = allLibrary().filter(m => Q.canDo(g, m) && !conflicts(m, u).high.length && !m.home)
-    .map(m => ({ m, score: (pattern && m.pattern === pattern ? 3 : 0) + (m.focus || []).filter(f => focus.includes(f)).length * 2 + (!!m.db === !!defOf(ex, v).db ? 1 : 0) }))
+    .map(m => ({ m, score: muscleMatch(defOf(ex, v).name, focus, m.name, m.focus) + (pattern && m.pattern === pattern ? 3 : 0) + (m.focus || []).filter(f => focus.includes(f)).length * 2 + (!!m.db === !!defOf(ex, v).db ? 1 : 0) }))
     .filter(x => x.score >= 4).sort((a, b) => b.score - a.score || a.m.name.localeCompare(b.m.name))[0];
   if (best) return `lib:${best.m.id}`;
   return ["hard"].find(x => x !== v && validV(ex, x) && ok(x)) || null;
@@ -555,10 +556,12 @@ function openLibSwap(id) { state.overlay = "libswap"; state.libSwapFor = { u: LU
 function drawLibSwap() {
   const { u, date, id } = state.libSwapFor; const ex = todaysList(u, date).find(x => x.ex.id === id)?.ex; if (!ex) return;
   const pattern = PLAN_PATTERN[ex.id] || ex.lib?.pattern || "";
-  const scored = allLibrary().filter(m => `lib-${m.id}` !== ex.id).map(m => {
+  // Muscles first (a curl for a curl), then the same movement, then broad areas as a tie-break.
+  const scored = allLibrary().filter(m => `lib-${m.id}` !== ex.id && m.name.toLowerCase() !== ex.n.toLowerCase()).map(m => {
     const overlap = (m.focus || []).filter(f => ex.focus.includes(f)).length;
-    return { m, score: (pattern && m.pattern === pattern ? 3 : 0) + overlap * 2 + ((m.focus2 || []).some(f => ex.focus.includes(f)) ? 1 : 0), same: pattern && m.pattern === pattern, overlap };
-  }).filter(x => x.overlap > 0 || x.same).filter(x => isHome(u, date) || Q.canDo(currentGym(u, date), x.m)).sort((a, b) => b.score - a.score || a.m.name.localeCompare(b.m.name));
+    const musc = muscleMatch(ex.n, ex.focus, m.name, m.focus);
+    return { m, score: musc + (pattern && m.pattern === pattern ? 3 : 0) + overlap + ((m.focus2 || []).some(f => ex.focus.includes(f)) ? 1 : 0), same: pattern && m.pattern === pattern, overlap };
+  }).filter(x => x.overlap > 0 || x.same || x.score >= 3).filter(x => isHome(u, date) || Q.canDo(currentGym(u, date), x.m)).sort((a, b) => b.score - a.score || a.m.name.localeCompare(b.m.name));
   const ok = scored.filter(x => !conflicts(x.m, u).high.length);
   const sore = scored.filter(x => conflicts(x.m, u).high.length);
   const btn = ({ m, same }) => {
@@ -570,7 +573,7 @@ function drawLibSwap() {
   };
   $("#overlay").innerHTML = `<div class="overlay" role="dialog" aria-label="Pick from the library"><div class="inner">
     <div class="between"><h2 class="h2">Pick from the library</h2><button class="btn small" data-act="closeOverlay">Close</button></div>
-    <p class="muted">Instead of <b>${esc(ex.n)}</b>${pattern ? ` (${esc(PATTERN[pattern].toLowerCase())})` : ""}, which works ${esc(listText(ex.focus.filter(f => FOCUS[f]).map(f => FOCUS[f].toLowerCase())))}. Same target: ${esc(ex.sr)}. Best matches first.</p>
+    <p class="muted">Instead of <b>${esc(ex.n)}</b>${pattern ? ` (${esc(PATTERN[pattern].toLowerCase())})` : ""}, which works ${esc(musclesText(ex.n, ex.focus) || listText(ex.focus.filter(f => FOCUS[f]).map(f => FOCUS[f].toLowerCase())))}. Same target: ${esc(ex.sr)}. Best matches first.</p>
     ${aches(u).length ? `<p class="small">Sore today: ${esc(aches(u).map(j => JOINTS[j]).join(", "))}. Change this in the exercise library (Settings).</p>` : ""}
     <section class="card"><div class="pick-list">${ok.length ? ok.map(btn).join("") : `<p class="muted small">No matches in the library yet.</p>`}</div></section>
     ${sore.length ? `<section class="card"><h3 class="h3">Hard on your sore areas</h3><div class="pick-list">${sore.map(btn).join("")}</div></section>` : ""}

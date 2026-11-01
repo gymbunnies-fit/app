@@ -332,6 +332,20 @@ for (const b of BUILTIN) {
   yes("lat pulldown helps biceps", MU.musclesOf("Lat Pulldown").also.includes("biceps"));
   eq("an unknown move falls back to its focus", MU.musclesOf("Mystery Machine", ["back"]).main, "lats");
   eq("nothing to go on gives nothing", MU.musclesOf("Mystery Machine", []), null);
+  // Library swaps match by muscle: a curl tagged shoulders/arms/core still gets curls first, not presses.
+  eq("curl for curl is a top match", MU.muscleMatch("Barbell Curl", ["shoulders", "arms", "core"], "Hammer Curl", ["arms"]), 6);
+  eq("overhead press is no match for a curl", MU.muscleMatch("Barbell Curl", ["shoulders", "arms", "core"], "Standing Dumbbell Overhead Press", ["shoulders", "core"]), 0);
+  eq("a row helps a curl", MU.muscleMatch("Barbell Curl", ["arms"], "Seated Cable Row", ["back"]), 3);
+  eq("close-grip press is triceps", MU.musclesOf("Close-Grip Dumbbell Press", ["arms", "chest"]).main, "triceps");
+  eq("close-grip pulldown stays lats", MU.musclesOf("Close-Grip Lat Pulldown").main, "lats");
+  eq("curl described by muscle", MU.musclesText("Barbell Curl", ["shoulders", "arms", "core"]), "the biceps and forearms");
+  {
+    const { BUILTIN: LB } = await import(join(here, "../js/library.js"));
+    const ex = { n: "Barbell Curl", focus: ["shoulders", "arms", "core"] };
+    const top = LB.filter(m => m.name !== ex.n).map(m => ({ m, s: MU.muscleMatch(ex.n, ex.focus, m.name, m.focus) + (m.focus || []).filter(f => ex.focus.includes(f)).length }))
+      .sort((a, b) => b.s - a.s || a.m.name.localeCompare(b.m.name)).slice(0, 5);
+    yes("top library swaps for a curl are all biceps moves", top.every(x => MU.musclesOf(x.m.name, x.m.focus).main === "biceps"));
+  }
   const sess = [{ id: "s", user: "mat", date: "2026-10-13", exercises: [
     { id: "x", name: "Cable Lateral Raise", sets: [{ w: 10, r: 12, side: "L" }, { w: 10, r: 12, side: "R" }, { w: 10, r: 12, side: "L" }, { w: 10, r: 12, side: "R" }] },
     { id: "y", name: "Lat Pulldown", sets: [{ w: 80, r: 10 }, { w: 80, r: 10 }] }] }];

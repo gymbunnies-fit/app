@@ -57,6 +57,7 @@ const RULES = [
   R(/shrug/i, "traps"),
   R(/curl/i, "biceps", "forearms"),
   R(/pushdown|tricep|skull/i, "triceps"),
+  R(/close-grip[\w ]*press/i, "triceps", "chest", "frontDelts"),
   R(/dip/i, "triceps", "chest", "frontDelts"),
   R(/lateral raise/i, "sideDelts", "traps"),
   R(/front raise/i, "frontDelts"),
@@ -75,6 +76,25 @@ export function musclesOf(name, focus = []) {
   if (r) return { main: r.main, also: r.also };
   const m = (focus || []).map(f => FOCUS_MUSCLE[f]).filter(Boolean);
   return m.length ? { main: m[0], also: [...new Set(m.slice(1))].filter(x => x !== m[0]) } : null;
+}
+
+// How well one exercise stands in for another, by the muscles their names point at.
+// 6: same main muscle (a curl for a curl). 3: the other one helps with it (a row for a curl).
+// 1: it only helps with the other's main muscle. 0: nothing in common, so broad areas alone ("arms") can't
+// put a shoulder press at the top of a curl's swaps.
+export function muscleMatch(fromName, fromFocus, toName, toFocus) {
+  const a = musclesOf(fromName, fromFocus), b = musclesOf(toName, toFocus);
+  if (!a || !b) return 0;
+  if (a.main === b.main) return 6;
+  if (b.also.includes(a.main)) return 3;
+  if (a.also.includes(b.main)) return 1;
+  return 0;
+}
+// "the biceps and forearms": what an exercise works, for a sentence.
+export function musclesText(name, focus = []) {
+  const m = musclesOf(name, focus); if (!m) return "";
+  const xs = [m.main, ...m.also.slice(0, 2)].map(id => MUSCLES[id].n.toLowerCase());
+  return "the " + (xs.length < 3 ? xs.join(" and ") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
 }
 
 // Sets per muscle: aimed at it (main) and helping (also), planned for the cycle and logged so far.
