@@ -341,6 +341,26 @@ for (const b of BUILTIN) {
   eq("an added curl gets the arms area", MU.focusFromName("Preacher Curl").join(), "arms");
   eq("an added row gets back and shoulders", MU.focusFromName("Chest-Supported Row").join(), "back,shoulders");
   eq("an unknown name gets no guess", MU.focusFromName("Mystery Machine").length, 0);
+  {
+    const XS = await import(join(here, "../js/exsearch.js"));
+    const { BUILTIN: LB2 } = await import(join(here, "../js/library.js"));
+    const items = LB2.map(b => ({ ...b, tags: XS.ALIASES[b.id] || [] }));
+    const top = q => XS.searchExercises(q, items, 1)[0]?.item.name;
+    yes("every alias points at a real library move", Object.keys(XS.ALIASES).every(id => LB2.some(b => b.id === id)));
+    eq("other name finds the move", top("skull crushers"), "Dumbbell Skull Crusher");
+    eq("pec deck finds the pectoral fly", top("pec deck"), "Pectoral Fly");
+    eq("half-typed word still finds it", top("shoulder pres"), "Shoulder Press");
+    eq("a typo still finds it", top("bulgarain split squat"), "Bulgarian Split Squat");
+    eq("plural and case don't matter", top("LEG EXTENSIONS"), "Leg Extension");
+    eq("same words in another order is the same move", XS.sameExercise("Curl Hammer", items)?.item.name, "Hammer Curl");
+    eq("a short word alone is not a redirect", XS.sameExercise("curls", items), null);
+    eq("a new move isn't matched", XS.sameExercise("Cable Crossover", items), null);
+    const d = XS.fillDetails("Cable Crossover", LB2);
+    yes("new move gets focus, equipment and movement", d.focus.includes("chest") && d.equip === "cable" && d.pattern === "isolation");
+    yes("new move gets safety notes from a similar one", !!d.basedOn && Object.keys(d.joints).length > 0);
+    eq("a plank tracks time", XS.fillDetails("Copenhagen Plank", LB2).kind, "time");
+    yes("a one-arm move is one side at a time", XS.fillDetails("Single-Arm Cable Row", LB2).unilateral);
+  }
   eq("curl described by muscle", MU.musclesText("Barbell Curl", ["shoulders", "arms", "core"]), "the biceps and forearms");
   {
     const { BUILTIN: LB } = await import(join(here, "../js/library.js"));

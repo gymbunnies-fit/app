@@ -1,5 +1,5 @@
 // The onboarding questionnaire: one question per screen.
-import { $, AVATARS, GROUPS, P, PROFILE_DEFAULTS, closeOverlay, dayName, esc, libItem, listText, profileIds, render, saveProfile, slug, state, store, toast } from "../app.js";
+import { $, GROUPS, avatarGrid, P, PROFILE_DEFAULTS, closeOverlay, dayName, esc, libItem, listText, profileIds, render, saveProfile, slug, state, store, toast } from "../app.js";
 import * as PG from "../program.js";
 import * as TL from "../tailor.js";
 import { track } from "./usage.js";
@@ -30,7 +30,7 @@ function drawOnboarding() {
   let body = "";
   if (step === "name") body = q(o.id ? `Let's update your plan, ${esc(a.name)}` : "Welcome! Let's build your plan.", "A few quick questions so the workouts fit you: your goals, your body, and your schedule. About two minutes.",
     `<label class="field">First name<input type="text" data-ob="name" value="${esc(a.name)}" placeholder="First name" autocomplete="given-name"></label>
-     <div class="field"><span>Pick an avatar</span><div class="avatars"><button type="button" data-act="obPick" data-k="avatar" data-v="" aria-pressed="${!a.avatar}">${esc((a.name || "A")[0].toUpperCase())}</button>${AVATARS.map(x => `<button type="button" data-act="obPick" data-k="avatar" data-v="${x}" aria-pressed="${a.avatar === x}">${x}</button>`).join("")}</div></div>`);
+     <fieldset class="field av-pick"><legend>Pick an avatar</legend>${avatarGrid(a.avatar, `data-act="obPick" data-k="avatar"`, a.name, a.color)}</fieldset>`);
   if (step === "goals") body = q("What do you want out of training?", "Pick as many as fit.", multi("goals", Object.entries(TL.GOALS)) +
     `<label class="field">Anything else? (optional)<textarea data-ob="goalNote" placeholder="Get ready for a hike, fit into my suit for a wedding…">${esc(a.goalNote)}</textarea></label>`);
   if (step === "focus") body = q("Any body parts you want extra attention on?", "Optional. Leave it blank for a balanced plan.", multi("focus", [...GROUPS.filter(g => g !== "cardio").map(g => [g, FOCUS[g]]), ["full", "Full body"], ["cardio", "Cardio fitness"]]));

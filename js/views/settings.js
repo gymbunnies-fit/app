@@ -92,8 +92,8 @@ function openSettings() {
       <label class="check"><input type="checkbox" data-act="setSound" ${p.sound !== false ? "checked" : ""}><span>Sounds and vibration</span></label></section>
     ${myGymsCard()}
     <section class="card"><h3 class="h3">Two-week cycle</h3>
-      <label class="field">Week A started on (a Monday)<input type="date" data-act="cycleStart" value="${cs}"></label>
-      <p class="small muted">Today is in Week ${ci.week}. Shared by everyone.</p></section>
+      <label class="field">This cycle started on (Week A, a Monday)<input type="date" data-act="cycleStart" value="${ci.start}"></label>
+      <p class="small muted">This cycle runs ${esc(S.fmtDate(ci.start))} to ${esc(S.fmtDate(ci.end))}. Today is in Week ${ci.week}${ci.week === "A" ? `, and Week B starts ${esc(S.fmtDate(S.addDays(ci.start, 7)))}` : `, and the next cycle starts ${esc(S.fmtDate(S.addDays(ci.start, 14)))}`}. A new cycle starts every two weeks. Everyone in your crew shares it.</p></section>
     <section class="card"><h3 class="h3">Install on your phone</h3>
       <p class="small"><b>iPhone:</b> open this page in Safari, tap Share, then Add to Home Screen.</p>
       <p class="small"><b>Android:</b> open it in Chrome, tap the ⋮ menu, then Install app.</p><p class="small muted">App version ${APP_VERSION}. If a fix isn't showing up, close the app completely (swipe it away) and open it again.</p></section>

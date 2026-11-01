@@ -8,7 +8,9 @@ import * as ST from "./stretch.js";
 import { icon, play } from "./icons.js";
 import * as S from "./stats.js";
 import * as Q from "./equipment.js";
-import { focusFromName, muscleMatch, musclesText } from "./muscles.js";
+import { muscleMatch, musclesText } from "./muscles.js";
+import * as XS from "./exsearch.js";
+import { BUNNIES, bunnySvg, isBunny } from "./bunnies.js";
 import { BUILTIN, GYM, PLAN_MACHINES, EQUIP, PATTERN, JOINTS, POSITION, LEVEL, PLAN_PATTERN, STRETCH_BY_FOCUS, normalizeLib } from "./library.js";
 import { connect, save, remove, patch, dropField, signOutAndClear, importAll, COLLECTIONS, watchAuth, signInGoogle, signInEmail, createEmailAccount, resetPassword, addGoogle, addPassword, currentInfo,
   getUserDoc, setUserDoc, createCrew, joinCrew, watchCrew, updateMember, removeMember, renameCrew, newInviteCode,
@@ -28,7 +30,7 @@ import { focusSaved, openKey, stretchBox, viewToday } from "./views/workout.js";
 
 // ---------------------------------------------------------------- helpers
 // Shown at the bottom of Settings so you can tell whether a phone has the latest update. Bump with sw.js VERSION.
-const APP_VERSION = "64";
+const APP_VERSION = "65";
 // The app's name lives here only (plus app-v41.webmanifest and the <title> tags in index.html, which can't read JS).
 const APP_NAME = "GymBunnies.fit";
 const $ = (s, r = document) => r.querySelector(s);
@@ -92,8 +94,15 @@ function allLibrary() {
 }
 const libItem = id => allLibrary().find(x => x.id === id);
 // Names match ignoring case, spaces and punctuation, so "Barbell curl" finds "Barbell Curl".
-const nameKey = n => String(n || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
-const libByName = name => allLibrary().find(x => nameKey(x.name) === nameKey(name));
+// Every name a library move goes by: its own other names (tags people added) plus the well-known ones.
+const libTags = m => [...new Set([...(XS.ALIASES[m.id] || []), ...(m.tags || [])])];
+const libByName = name => allLibrary().find(m => XS.hasName({ name: m.name, tags: libTags(m) }, name));
+// Remember another name for a library move (a built-in keeps it in its own small override record).
+function addLibTag(m, name) {
+  const t = String(name || "").trim().replace(/\s+/g, " ").slice(0, 60);
+  if (!t || XS.hasName({ name: m.name, tags: libTags(m) }, t)) return;
+  patch("library", m.id, { tags: [...(m.tags || []), t].slice(-20) });
+}
 // A new library entry never takes over another one's id (a built-in, or one someone saved earlier).
 function newLibId(name) {
   const base = slug(name) || "exercise"; const taken = new Set([...BUILTIN.map(b => b.id), ...state.data.library.map(d => d.id)]);
@@ -507,31 +516,69 @@ function seg(act, current, opts, label, extra = "") {
 }
 
 // ---------------------------------------------------------------- add-an-exercise picker
-function openPicker() { state.overlay = "picker"; state.pickerQ = ""; drawPicker(); }
-function drawPicker() {
-  const u = LU(), date = LD(); const q = state.pickerQ.toLowerCase();
-  const onList = new Set(todaysList(u, date).map(x => x.ex.id));
+function openPicker() { state.overlay = "picker"; state.pickerQ = ""; state.pickerNew = { kind: "", db: null, focus: null, open: false }; state.pickerDym = null; drawPicker(); }
+// Everything that can be added: library moves (with their other names), your own past ones, and plan moves.
+function pickerItems(onList) {
   const customs = new Map();
   for (const s of state.data.sessions) for (const e of s.exercises || []) if (e.id.startsWith("custom-")) customs.set(e.id, e);
-  const match = n => !q || n.toLowerCase().includes(q);
-  const item = (id, name, meta) => `<button class="list-btn" data-act="pickEx" data-id="${id}"><b>${esc(name)}</b><span class="small muted">${esc(meta)}</span></button>`;
-  const libList = allLibrary().filter(m => !onList.has(`lib-${m.id}`) && match(m.name)).sort((a, b) => a.name.localeCompare(b.name)).map(m => `<button class="list-btn" data-act="pickLib" data-id="${esc(m.id)}"><b>${esc(m.name)}</b><span class="small muted">${esc([EQUIP[m.equip], (m.focus || []).map(f => FOCUS[f]).join(", ")].filter(Boolean).join(" · "))}</span></button>`).join("");
-  const cust = [...customs.values()].filter(e => !onList.has(e.id) && match(e.name)).map(e => item(e.id, e.name, "Your exercise")).join("");
-  const plan = Object.values(ALL_EX).filter(e => !onList.has(e.id) && match(e.n)).map(e => item(e.id, e.n, `Week ${e.week} ${dayName(e.day)} · ${e.sr}`)).join("");
+  const libNames = new Set(allLibrary().map(m => XS.norm(m.name)));
+  const planSeen = new Set();
+  return [
+    ...allLibrary().filter(m => !onList.has(`lib-${m.id}`)).map(m => ({ id: m.id, name: m.name, tags: libTags(m), type: "lib", act: "pickLib",
+      meta: [EQUIP[m.equip], (m.focus || []).map(f => FOCUS[f]).join(", ")].filter(Boolean).join(" · ") })),
+    ...[...customs.values()].filter(e => !onList.has(e.id)).map(e => ({ id: e.id, name: e.name, tags: [], type: "mine", act: "pickEx", meta: "Your exercise" })),
+    ...Object.values(ALL_EX).filter(e => !onList.has(e.id) && !libNames.has(XS.norm(e.n)) && !planSeen.has(e.n) && planSeen.add(e.n))
+      .map(e => ({ id: e.id, name: e.n, tags: [], type: "plan", act: "pickEx", meta: `Week ${e.week} ${dayName(e.day)} · ${e.sr}` }))
+  ];
+}
+function drawPicker() {
+  const u = LU(), date = LD(); const q = state.pickerQ.trim();
+  const onList = new Set(todaysList(u, date).map(x => x.ex.id));
+  const items = pickerItems(onList);
+  const btn = (it, via) => `<button class="list-btn" data-act="${it.act}" data-id="${esc(it.id)}"><b>${esc(it.name)}</b><span class="small muted">${esc([via ? `Also called ${via}` : "", it.meta].filter(Boolean).join(" · "))}</span></button>`;
+  const section = (title, list) => list.length ? `<section class="card"><h3 class="h3">${title}</h3><div class="pick-list">${list.map(it => btn(it)).join("")}</div></section>` : "";
+  let body = "", count = "";
+  if (!q) {
+    body = section("From the gym library", items.filter(x => x.type === "lib").sort((a, b) => a.name.localeCompare(b.name)))
+      + section("Ones you've added before", items.filter(x => x.type === "mine")) + section("From the plan", items.filter(x => x.type === "plan"));
+  } else {
+    const hits = XS.searchExercises(q, items, 15);
+    const exact = hits.find(h => h.score >= 97);
+    count = hits.length ? `${hits.length} match${hits.length === 1 ? "" : "es"}` : "No matches";
+    const dym = state.pickerDym;
+    const n = state.pickerNew; const guess = XS.fillDetails(q, allLibrary(), {});
+    const kind = n.kind || guess.kind, db = n.db ?? guess.db, focus = n.focus || guess.focus;
+    const others = hits.filter(h => h.item.type === "lib").slice(0, 8);
+    const addCard = dym ? `<section class="card" id="pk-dym" tabindex="-1"><h3 class="h3">Did you mean ${esc(dym.name)}?</h3>
+        <p class="small">“${esc(q)}” looks like another name for <b>${esc(dym.name)}</b>${dym.via ? ` (also called ${esc(dym.via)})` : ""}. Using it keeps everyone's history for this move in one place.</p>
+        <div class="row"><button class="btn primary" data-act="dymYes">Yes, use ${esc(dym.name)}</button><button class="btn" data-act="dymNo">No, “${esc(q)}” is different</button></div></section>`
+      : exact ? "" : `<section class="card"><h3 class="h3">Not on the list?</h3>
+        <p class="small">Add “${esc(q)}” as a new exercise. It's saved to the library for everyone, with what it works and the safety notes filled in from similar moves. You can change any of it later in the exercise library.</p>
+        <details class="more" ${n.open ? "open" : ""} id="pn-details"><summary>Check the details first</summary><div class="panel">
+          <label class="field">What you track<select data-act="pnKind">${Object.entries(KIND_LABEL).map(([k, l]) => `<option value="${k}" ${kind === k ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>
+          <label class="check"><input type="checkbox" data-act="pnDb" ${db ? "checked" : ""}><span>Dumbbells (weight per hand)</span></label>
+          <div class="field"><span>What it works</span><div class="focus-chips">${GROUPS.map(g => `<button type="button" data-act="pnFocus" data-v="${g}" aria-pressed="${focus.includes(g)}">${FOCUS[g]}</button>`).join("")}</div></div>
+        </div></details>
+        <button class="btn primary" data-act="addCustom">Add “${esc(q)}”</button>
+        ${others.length ? `<label class="field">Or is it another name for one of these?<select id="pk-same"><option value="">Pick the move it's the same as…</option>${others.map(h => `<option value="${esc(h.item.id)}">${esc(h.item.name)}</option>`).join("")}</select></label>
+          <button class="btn" data-act="pickerSame">Use that one, and remember “${esc(q)}” as another name</button>` : ""}</section>`;
+    body = (hits.length ? `<section class="card"><h3 class="h3">Matches</h3><div class="pick-list">${hits.map(h => btn(h.item, h.via)).join("")}</div></section>` : "") + addCard;
+  }
   $("#overlay").innerHTML = `<div class="overlay" role="dialog" aria-label="Add an exercise"><div class="inner">
     <div class="between"><h2 class="h2">Add an exercise</h2><button class="btn small" data-act="closeOverlay">Close</button></div>
-    <label class="field">Search<input type="text" id="picker-q" data-act="pickerQ" value="${esc(state.pickerQ)}" placeholder="Hip adductor, row, curl…" autocomplete="off"></label>
-    <section class="card"><h3 class="h3">Something new</h3>
-      <label class="field">Name<input type="text" id="cx-name" placeholder="Hip Adductor Machine"></label>
-      <div class="grid2"><label class="field">What you track<select id="cx-kind"><option value="load">Weight × reps</option><option value="bw">Reps only</option><option value="time">Time (seconds)</option><option value="carry">Weight × steps</option><option value="assist">Assist weight × reps</option></select></label>
-      <label class="check" style="align-self:end"><input type="checkbox" id="cx-db"><span>Dumbbells (weight per hand)</span></label></div>
-      <div class="field"><span>What it works (so it shows up as a swap)</span><div class="focus-chips" id="cx-focus">${GROUPS.map(g => `<button type="button" data-act="libFocus" data-v="${g}" aria-pressed="false">${FOCUS[g]}</button>`).join("")}</div></div>
-      <label class="check"><input type="checkbox" id="cx-lib" checked><span>Save it to the exercise library too</span></label>
-      <button class="btn primary" data-act="addCustom">Add to today</button></section>
-    ${libList ? `<section class="card"><h3 class="h3">From the gym library</h3><div class="pick-list">${libList}</div></section>` : ""}
-    ${cust ? `<section class="card"><h3 class="h3">Ones you've added before</h3><div class="pick-list">${cust}</div></section>` : ""}
-    <section class="card"><h3 class="h3">From the plan</h3><div class="pick-list">${plan || `<p class="muted small">No matches.</p>`}</div></section>
+    <label class="field">Search, or type a new one<input type="text" id="picker-q" data-act="pickerQ" value="${esc(state.pickerQ)}" placeholder="Hip adductor, row, skull crusher…" autocomplete="off" aria-describedby="picker-count"></label>
+    <p id="picker-count" class="small muted" role="status" aria-live="polite">${esc(count)}</p>
+    ${body}
   </div></div>`;
+}
+// Add a brand-new exercise: saved to the library with everything filled in from its name.
+function addNewExercise(name) {
+  const n = state.pickerNew || {};
+  const d = XS.fillDetails(name, allLibrary(), { kind: n.kind || undefined, db: n.db ?? undefined, focus: n.focus || undefined });
+  const id = newLibId(name);
+  save("library", id, d);
+  addExtra({ id: `lib-${id}`, name, kind: d.kind, db: d.db, focus: d.focus });
+  toast(`Added ${name}. Details are filled in; check them any time in the library.`);
 }
 function addExtra(entry) {
   const u = LU(), date = LD(); const xs = getExtras(u, date);
@@ -550,15 +597,7 @@ function defOf(ex, v) {
   }
   return variantDef(ex, v);
 }
-function guessEquip(n) {
-  const s = n.toLowerCase();
-  if (/smith|barbell/.test(s)) return "barbell";
-  if (/cable|rope|pulley|face pull|pallof|woodchop|pulldown/.test(s)) return "cable";
-  if (/dumbbell|goblet|farmer|suitcase/.test(s)) return "dumbbell";
-  if (/machine|press|curl|extension|abductor|adductor|row|leg press|pec|deck|captain/.test(s)) return "machine";
-  if (/treadmill|bike|elliptical|rower|stair/.test(s)) return "cardio";
-  return "bodyweight";
-}
+const guessEquip = n => XS.guessEquip(n);
 
 // ---------------------------------------------------------------- library swap picker
 function openLibSwap(id) { state.overlay = "libswap"; state.libSwapFor = { u: LU(), date: LD(), id }; state.libSwapAll = false; drawLibSwap(); }
@@ -613,7 +652,7 @@ function viewGym() {
     (F.difficulty === "all" || String(m.difficulty) === F.difficulty) &&
     (F.effort === "all" || String(m.effort) === F.effort) &&
     (F.impact === "all" || (m.impact || 0) <= +F.impact) &&
-    (!F.q || m.name.toLowerCase().includes(F.q.toLowerCase())));
+    (!F.q || XS.searchExercises(F.q, [{ name: m.name, tags: libTags(m) }], 1).length));
   const hiddenBySore = F.hideSore === "yes" ? list.filter(m => conflicts(m, u).high.length) : [];
   list = list.filter(m => !hiddenBySore.includes(m));
   // Only what today's gym has, unless "Everything" is picked.
@@ -629,6 +668,8 @@ function viewGym() {
     impact: (a, b) => (a.impact || 0) - (b.impact || 0) || a.name.localeCompare(b.name)
   };
   list.sort(sorts[F.sort] || sorts.name);
+  // Searching: best matches first (a known other name counts), whatever the sort.
+  if (F.q.trim()) { const sc = m => XS.searchExercises(F.q, [{ name: m.name, tags: libTags(m) }], 1)[0]?.score || 0; list.sort((a, b) => sc(b) - sc(a)); }
   const equipCounts = Object.fromEntries(Object.keys(EQUIP).map(k => [k, all.filter(m => m.equip === k).length]));
   const sel = (k, label, opts) => `<label class="field">${label}<select data-act="libSel" data-k="${k}">${opts.map(([v, l]) => `<option value="${v}" ${String(F[k]) === v ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>`;
   const chips = (k, opts) => `<div class="focus-chips">${opts.map(([v, l]) => `<button type="button" data-act="libF" data-k="${k}" data-v="${v}" aria-pressed="${F[k] === v}">${esc(l)}</button>`).join("")}</div>`;
@@ -667,6 +708,8 @@ function libCard(m, u) {
   return `<article class="card lib-card">
     <div class="head"><h3 class="name">${esc(m.name)}</h3><span class="sr">${esc(m.sr || "")}</span></div>
     <div class="small muted">${esc([EQUIP[m.equip], PATTERN[m.pattern], POSITION[m.position], m.unilateral ? "One side at a time" : ""].filter(Boolean).join(" · "))}</div>
+    ${libTags(m).length ? `<div class="small muted">Also called ${esc(listText(libTags(m), "or"))}</div>` : ""}
+    ${m.auto ? `<div class="small warn-text">Filled in automatically${m.basedOn ? ` from ${esc(m.basedOn)}` : ""}. Tap Edit to check it.</div>` : ""}
     <div class="small"><b>${esc((m.focus || []).map(f => FOCUS[f]).join(", "))}</b>${m.focus2?.length ? `<span class="muted"> · also ${esc(m.focus2.map(f => FOCUS[f].toLowerCase()).join(", "))}</span>` : ""}</div>
     <div class="meters small"><span>Difficulty <b class="mono">${dots(m.difficulty)}</b></span><span>Effort <b class="mono">${dots(m.effort)}</b></span><span>Impact <b>${LEVEL.impact[m.impact || 0]}</b></span></div>
     ${c.high.length ? `<div class="pill hold">Hard on your ${esc(listText(c.high.map(j => JOINTS[j].toLowerCase())))} today.</div>` : c.some.length ? `<div class="small warn-text">Some load on your ${esc(listText(c.some.map(j => JOINTS[j].toLowerCase())))}.</div>` : ""}
@@ -686,6 +729,8 @@ function libForm(m) {
   const risksText = (m.risks || []).map(r => `${r.area ? (JOINTS[r.area] || r.area) + ": " : ""}${r.risk}${r.avoid ? " — " + r.avoid : ""}`).join("\n");
   return `<section class="card" id="lib-form"><h3 class="h3">${isNew ? "New exercise or machine" : `Edit ${esc(m.name)}`}</h3>
     <label class="field">Name<input type="text" id="lib-name" value="${esc(m.name || "")}" placeholder="Hip Adductor Machine"></label>
+    <label class="field">Other names it goes by, separated by commas<input type="text" id="lib-tags" value="${esc((m.tags || []).join(", "))}" placeholder="Skull crusher, lying triceps extension" autocomplete="off"></label>
+    ${XS.ALIASES[m.id]?.length ? `<p class="small muted">Already known as ${esc(listText(XS.ALIASES[m.id], "or"))}.</p>` : ""}
     <div class="field"><span>Main focus (pick all that apply)</span><div class="focus-chips" id="lib-focus">${GROUPS.map(g => `<button type="button" data-act="libFocus" data-v="${g}" aria-pressed="${focus.includes(g)}">${FOCUS[g]}</button>`).join("")}</div></div>
     <div class="grid2">
       <label class="field">Equipment<select id="lib-equip">${opt(EQUIP, m.equip || "machine")}</select></label>
@@ -726,7 +771,8 @@ function saveLibrary() {
   save("library", id, {
     name, focus, equip: $("#lib-equip").value, pattern: $("#lib-pattern").value, position: $("#lib-position").value, kind: $("#lib-kind").value,
     difficulty: +$("#lib-difficulty").value, effort: +$("#lib-effort").value, impact: +$("#lib-impact").value, sr: $("#lib-sr").value.trim() || "3 × 10",
-    db: $("#lib-db").checked, unilateral: $("#lib-uni").checked, joints, how: $("#lib-how").value.trim(), risks
+    db: $("#lib-db").checked, unilateral: $("#lib-uni").checked, joints, how: $("#lib-how").value.trim(), risks,
+    tags: [...new Set($("#lib-tags").value.split(",").map(x => x.trim().replace(/\s+/g, " ").slice(0, 60)).filter(Boolean))].slice(0, 20), auto: false
   });
   toast(state.libEdit !== "new" ? "Saved." : `Added ${name}.`); state.libEdit = null; render();
 }
@@ -800,7 +846,14 @@ function applyAppearance() {
 }
 function avatarHtml(id, big, dot) {
   const p = P(id);
-  return `<span class="av ${big ? "big" : ""}" data-p="${esc(id)}" style="--c:${esc(p.color)}" aria-hidden="true">${esc(p.avatar || (p.name || "?")[0].toUpperCase())}${dot ? `<i class="online"></i>` : ""}</span>`;
+  const face = isBunny(p.avatar) ? bunnySvg(p.avatar.slice(4)) : esc(p.avatar || (p.name || "?")[0].toUpperCase());
+  return `<span class="av ${big ? "big" : ""} ${isBunny(p.avatar) ? "has-bun" : ""}" data-p="${esc(id)}" style="--c:${esc(p.color)}" aria-hidden="true">${face}${dot ? `<i class="online"></i>` : ""}</span>`;
+}
+// The avatar choices: our own bunny drawings first, then emoji. attrs: the data-act/data-k for each button.
+function avatarGrid(cur, attrs, name = "A", color = "") {
+  const b = (v, inner, label) => `<button type="button" ${attrs} data-v="${esc(v)}" aria-pressed="${cur === v}"${label ? ` aria-label="${esc(label)}"` : ""}>${inner}</button>`;
+  return `<div class="field"><span>Bunnies</span><div class="avatars">${Object.entries(BUNNIES).map(([id, x]) => b(`bun:${id}`, `<span class="av has-bun" style="--c:${esc(color || "var(--accent)")}" aria-hidden="true">${bunnySvg(id)}</span>`, x.n)).join("")}</div></div>
+    <div class="field"><span>More</span><div class="avatars">${b("", esc((name || "A")[0].toUpperCase()), "Your first initial")}${AVATARS.map(x => b(x, x)).join("")}</div></div>`;
 }
 function saveProfile(id, fields) {
   const exists = state.data.profiles.some(p => p.id === id);
@@ -1074,7 +1127,7 @@ function drawProfileForm(p) {
   $("#overlay").innerHTML = `<div class="overlay" role="dialog" aria-label="Profile"><div class="inner">
     <div class="between"><h2 class="h2">${f.id ? `Edit ${esc(p.name)}` : "New person"}</h2><button class="btn small" data-act="closeOverlay">Close</button></div>
     <section class="card"><label class="field">Name<input type="text" id="pf-name" value="${esc(p.name || "")}" placeholder="First name"></label>
-      <div class="field"><span>Avatar</span><div class="avatars"><button type="button" data-act="pfAvatar" data-v="" aria-pressed="${!f.avatar}">${esc((p.name || "A")[0].toUpperCase())}</button>${AVATARS.map(a => `<button type="button" data-act="pfAvatar" data-v="${a}" aria-pressed="${f.avatar === a}">${a}</button>`).join("")}</div></div>
+      <fieldset class="field av-pick"><legend>Avatar</legend>${avatarGrid(f.avatar, `data-act="pfAvatar"`, p.name, p.color)}</fieldset>
       <label class="field">Color<input type="color" id="pf-color" value="${esc(p.color || "#2f6b5e")}"></label></section>
     <section class="card"><h3 class="h3">Goals</h3>
       <label class="field">What do you want out of training?<textarea id="pf-goals" placeholder="Lose fat around the middle, get stronger, better cardio…">${esc(p.focusNote || "")}</textarea></label>
@@ -1344,7 +1397,7 @@ document.addEventListener("click", e => {
     case "editProfile": openProfileForm(state.user); break;
     case "pfToggle": { const f = state.profForm[el.dataset.k]; const i = f.indexOf(el.dataset.v); i >= 0 ? f.splice(i, 1) : f.push(el.dataset.v); el.setAttribute("aria-pressed", i < 0); break; }
     case "pfOne": state.profForm[el.dataset.k] = el.dataset.v; el.parentElement.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", b === el)); break;
-    case "pfAvatar": state.profForm.avatar = el.dataset.v; el.parentElement.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", b === el)); break;
+    case "pfAvatar": state.profForm.avatar = el.dataset.v; el.closest(".av-pick").querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", b === el)); break;
     case "pfSave": saveProfileForm(); break;
     case "pfArchive": { if (state.confirmDel !== "pf") { state.confirmDel = "pf"; drawProfileForm(P(state.profForm.id)); break; } state.confirmDel = null; saveProfile(state.profForm.id, { archived: true }); if (state.user === state.profForm.id) { state.user = null; store.del("twp-user"); } closeOverlay(); render(); break; }
     case "pickPartner": state.partnerId = v; store.set("twp-partner-id", v); openSettings(); render(); break;
@@ -1569,19 +1622,25 @@ document.addEventListener("click", e => {
     case "pickLib": { const m = libItem(el.dataset.id); if (m) addExtra({ id: `lib-${m.id}`, name: m.name, kind: m.kind || "load", db: !!m.db, focus: m.focus || [] }); break; }
     case "pickEx": { const ex = ALL_EX[el.dataset.id]; if (ex) addExtra({ id: ex.id, name: ex.n, kind: ex.kind, db: ex.db }); else { const found = state.data.sessions.flatMap(s => s.exercises || []).find(x => x.id === el.dataset.id); if (found) addExtra({ id: found.id, name: found.name, kind: found.kind, db: !!found.db }); } break; }
     case "addCustom": {
-      const name = $("#cx-name").value.trim(); if (!name) { toast("Give it a name first."); break; }
-      const kind = $("#cx-kind").value, db = $("#cx-db").checked;
-      if ($("#cx-lib").checked) {
-        // Already in the library: use that one instead of writing over it or making a second copy.
-        const have = libByName(name);
-        if (have) { addExtra({ id: `lib-${have.id}`, name: have.name, kind: have.kind || "load", db: !!have.db, focus: have.focus || [] }); toast(`${have.name} is already in the library, so that's the one added.`); break; }
-        const picked = [...document.querySelectorAll("#cx-focus [aria-pressed=true]")].map(b => b.dataset.v);
-        const focus = picked.length ? picked : focusFromName(name);
-        const id = newLibId(name);
-        save("library", id, { name, focus, equip: guessEquip(name), pattern: "", kind, db, notes: "", sr: "3 × 10" });
-        addExtra({ id: `lib-${id}`, name, kind, db, focus }); toast(`Added ${name} to today and the library.`);
-      } else addExtra({ id: `custom-${slug(name)}`, name, kind, db });
-      break;
+      const name = state.pickerQ.trim().replace(/\s+/g, " "); if (!name) { toast("Type the exercise's name first."); break; }
+      // Already in the library under this name or one of its other names: use that one.
+      const have = libByName(name);
+      if (have) { addExtra({ id: `lib-${have.id}`, name: have.name, kind: have.kind || "load", db: !!have.db, focus: have.focus || [] }); toast(`${name} is ${XS.norm(name) === XS.norm(have.name) ? "already in the library" : `another name for ${have.name}`}, so that's the one added.`); break; }
+      // The same move under another name (same words in another order, or a known other name)? Ask first.
+      const like = XS.sameExercise(name, pickerItems(new Set()).filter(x => x.type === "lib"));
+      if (like) { state.pickerDym = { id: like.item.id, name: like.item.name, via: like.via }; drawPicker(); $("#pk-dym")?.focus(); break; }
+      addNewExercise(name); break;
+    }
+    case "dymYes": { const m = libItem(state.pickerDym?.id); if (!m) break; addLibTag(m, state.pickerQ); addExtra({ id: `lib-${m.id}`, name: m.name, kind: m.kind || "load", db: !!m.db, focus: m.focus || [] }); toast(`Added ${m.name}. “${state.pickerQ.trim()}” now finds it too.`); break; }
+    case "dymNo": state.pickerDym = null; addNewExercise(state.pickerQ.trim().replace(/\s+/g, " ")); break;
+    case "pickerSame": {
+      const m = libItem($("#pk-same")?.value); if (!m) { toast("Pick the move it's the same as first."); break; }
+      addLibTag(m, state.pickerQ); addExtra({ id: `lib-${m.id}`, name: m.name, kind: m.kind || "load", db: !!m.db, focus: m.focus || [] });
+      toast(`Added ${m.name}. “${state.pickerQ.trim()}” now finds it too.`); break;
+    }
+    case "pnFocus": {
+      const n = state.pickerNew; const cur = n.focus || XS.fillDetails(state.pickerQ, [], {}).focus; const v = el.dataset.v;
+      n.focus = cur.includes(v) ? cur.filter(x => x !== v) : [...cur, v]; n.open = true; el.setAttribute("aria-pressed", n.focus.includes(v)); break;
     }
     case "saveCardio": saveCardio(false); focusSaved(); render(); break;
     case "skipCardio": saveCardio(true); focusSaved(); render(); break;
@@ -1724,6 +1783,7 @@ document.addEventListener("input", e => {
     state.libF.q = el.value; store.set("twp-libf", state.libF); const pos = el.selectionStart; render();
     const q = $("#lib-q"); if (q) { q.focus(); q.setSelectionRange(pos, pos); }
   } else if (el.dataset.act === "pickerQ") {
+    if (XS.norm(el.value) !== XS.norm(state.pickerQ)) { state.pickerDym = null; state.pickerNew = { kind: "", db: null, focus: null, open: !!state.pickerNew?.open }; }
     state.pickerQ = el.value; const pos = el.selectionStart; drawPicker();
     const q = $("#picker-q"); q.focus(); q.setSelectionRange(pos, pos);
   }
@@ -1735,12 +1795,16 @@ document.addEventListener("submit", e => {
   if (state.auth.mode === "create") busy(() => createEmailAccount(email, pw, $("#au-name")?.value.trim()));
   else busy(() => signInEmail(email, pw));
 });
+// Keep "Check the details first" open while typing redraws the picker.
+document.addEventListener("toggle", e => { if (e.target.id === "pn-details" && state.pickerNew) state.pickerNew.open = e.target.open; }, true);
 document.addEventListener("change", e => {
   const el = e.target; const act = el.dataset.act;
   if (act || el.dataset.a11y || el.dataset.gym) ev(`c_${act || (el.dataset.a11y ? `a11y_${el.dataset.a11y}` : "gym")}`);
   if ((act || el.dataset.gymd) && onGymChange(el)) return;
   if (act?.startsWith("imp") && onImpChange(el)) return;
   if (act === "progEx") { state.progEx = el.value; render(); }
+  if (act === "pnKind") { state.pickerNew.kind = el.value; state.pickerNew.open = true; }
+  if (act === "pnDb") { state.pickerNew.db = el.checked; state.pickerNew.open = true; }
   if (act === "pickGym") {
     const u = LU(), date = LD(), k = homeKey(u, date), cur = sessionFor(u, date);
     if (el.value === "add") { el.value = isHome(u, date) ? "home" : currentGym(u, date).id; openSettings(); setTimeout(() => scrollInto($("#my-gyms"), "start"), 60); return; }
@@ -1766,7 +1830,7 @@ document.addEventListener("change", e => {
   if (act === "cmpB") { state.cmpB = el.value; render(); }
   if (act === "logDate" && el.value) { state.logDate = el.value === TODAY() ? null : el.value; state.sel = null; state.userTouchedSel = false; render(); }
   if (act === "partner") { state.partner = el.checked; store.set("twp-partner", state.partner); if (!state.partner) state.logUser = state.user; render(); }
-  if (act === "cycleStart" && el.value) { save("settings", "app", { cycleStart: S.mondayOf(el.value) }); state.sel = null; toast("Cycle start updated for both of you."); closeOverlay(); render(); }
+  if (act === "cycleStart" && el.value) { save("settings", "app", { cycleStart: S.mondayOf(el.value) }); state.sel = null; toast("Cycle updated for everyone in your crew."); closeOverlay(); render(); }
   if (act === "import" && el.files?.[0]) {
     el.files[0].text().then(t => importAll(JSON.parse(t))).then(n => toast(`Restored ${n} items.`)).catch(() => toast("That file couldn't be read as a backup."));
   }
@@ -1949,7 +2013,7 @@ if ("serviceWorker" in navigator) {
 // ---------------------------------------------------------------- updates
 // Every time the app opens (or comes back to the front), ask the server which version is live.
 // If it's newer than this copy, throw the old copy away and reload. No buttons needed.
-const SHELL_FILES = ["./", "index.html", "css/styles.css", "js/app.js", "js/plan.js", "js/stats.js", "js/firebase.js", "js/library.js", "js/fun.js", "js/safety.js", "js/timer.js", "js/a11y.js", "js/icons.js", "js/tailor.js", "js/program.js", "js/stretch.js", "js/anatomy.js", "js/equipment.js", "js/muscles.js", "js/views/areas.js", "js/views/bodymap.js", "js/views/body.js", "js/views/crew.js", "js/views/feedback.js", "js/views/gyms.js", "js/views/import.js", "js/views/after.js", "js/importer.js", "js/views/progress.js", "js/views/questionnaire.js", "js/views/review.js", "js/views/settings.js", "js/views/stretch.js", "js/views/usage.js", "js/views/workout.js", "app-v41.webmanifest", "sw.js"];
+const SHELL_FILES = ["./", "index.html", "css/styles.css", "js/app.js", "js/plan.js", "js/stats.js", "js/firebase.js", "js/library.js", "js/fun.js", "js/safety.js", "js/timer.js", "js/a11y.js", "js/icons.js", "js/tailor.js", "js/program.js", "js/stretch.js", "js/anatomy.js", "js/equipment.js", "js/muscles.js", "js/exsearch.js", "js/bunnies.js", "js/views/areas.js", "js/views/bodymap.js", "js/views/body.js", "js/views/crew.js", "js/views/feedback.js", "js/views/gyms.js", "js/views/import.js", "js/views/after.js", "js/importer.js", "js/views/progress.js", "js/views/questionnaire.js", "js/views/review.js", "js/views/settings.js", "js/views/stretch.js", "js/views/usage.js", "js/views/workout.js", "app-v41.webmanifest", "sw.js"];
 async function liveVersion() {
   try { const r = await fetch(`sw.js?check=${Date.now()}`, { cache: "no-store" }); const m = /VERSION = "twp-v(\d+)"/.exec(await r.text()); return m ? m[1] : null; } catch { return null; }
 }
@@ -1979,4 +2043,4 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 try { const from = sessionStorage.getItem("twp-updated-from"); if (from) { sessionStorage.removeItem("twp-updated-from"); setTimeout(() => toast(from === APP_VERSION ? `Up to date: version ${APP_VERSION}.` : `Updated to version ${APP_VERSION}.`), 800); } } catch { /* ignore */ }
 
 // Shared with the screens in js/views/.
-export { $, APP_VERSION, logAfter, allGyms, crewGyms, currentGym, gymById, newGymId, saveMyGyms, updateGym, AVATARS, DIFF, FUN_LEVELS, GROUPS, LD, LU, P, PROFILES, PROFILE_DEFAULTS, THEMES, TODAY, VARIANT_NOTE, a11yOn, aches, autoSel, avatarHtml, baseDay, bonusDates, bonusPickFor, bonusPicker, canSee, cardioProgram, closeOverlay, conflicts, crewCard, crewSettings, cyclePlan, cycleStart, dayEdits, dayName, dayStatus, dayTitle, daysFor, defOf, deloadActive, deloadOf, deloadSuggestion, editKey, esc, funAt, funHeader, getDraft, gymSet, isHome, libItem, listText, nextPlanDay, other, otherSlotOn, paceOf, personToggle, planDay, planEditBox, profileIds, reminders, render, resolveEx, ring, riskBlock, saveProfile, seg, sessionFor, shareOf, slotDate, slotKey, slug, srFor, state, stopAll, store, supersetIdeas, toast, todaysList, vLabel, variantOf, warmupCard, workoutBar, yt, ytStretch };
+export { $, APP_VERSION, avatarGrid, logAfter, allGyms, crewGyms, currentGym, gymById, newGymId, saveMyGyms, updateGym, AVATARS, DIFF, FUN_LEVELS, GROUPS, LD, LU, P, PROFILES, PROFILE_DEFAULTS, THEMES, TODAY, VARIANT_NOTE, a11yOn, aches, autoSel, avatarHtml, baseDay, bonusDates, bonusPickFor, bonusPicker, canSee, cardioProgram, closeOverlay, conflicts, crewCard, crewSettings, cyclePlan, cycleStart, dayEdits, dayName, dayStatus, dayTitle, daysFor, defOf, deloadActive, deloadOf, deloadSuggestion, editKey, esc, funAt, funHeader, getDraft, gymSet, isHome, libItem, listText, nextPlanDay, other, otherSlotOn, paceOf, personToggle, planDay, planEditBox, profileIds, reminders, render, resolveEx, ring, riskBlock, saveProfile, seg, sessionFor, shareOf, slotDate, slotKey, slug, srFor, state, stopAll, store, supersetIdeas, toast, todaysList, vLabel, variantOf, warmupCard, workoutBar, yt, ytStretch };
