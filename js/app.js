@@ -11,6 +11,10 @@ import * as Q from "./equipment.js";
 import { muscleMatch, musclesText } from "./muscles.js";
 import * as XS from "./exsearch.js";
 import { BUNNIES, bunnySvg, isBunny } from "./bunnies.js";
+import * as H from "./health.js";
+import * as C from "./conditions.js";
+import * as TL from "./tailor.js";
+import { onHealthClick, onHealthInput, openHealthEdit } from "./views/healthform.js";
 import { BUILTIN, GYM, PLAN_MACHINES, EQUIP, PATTERN, JOINTS, POSITION, LEVEL, PLAN_PATTERN, STRETCH_BY_FOCUS, normalizeLib } from "./library.js";
 import { connect, save, remove, patch, dropField, signOutAndClear, importAll, COLLECTIONS, watchAuth, signInGoogle, signInEmail, createEmailAccount, resetPassword, addGoogle, addPassword, currentInfo,
   getUserDoc, setUserDoc, createCrew, joinCrew, watchCrew, updateMember, removeMember, renameCrew, newInviteCode,
@@ -30,7 +34,7 @@ import { focusSaved, openKey, stretchBox, viewToday } from "./views/workout.js";
 
 // ---------------------------------------------------------------- helpers
 // Shown at the bottom of Settings so you can tell whether a phone has the latest update. Bump with sw.js VERSION.
-const APP_VERSION = "65";
+const APP_VERSION = "66";
 // The app's name lives here only (plus app-v41.webmanifest and the <title> tags in index.html, which can't read JS).
 const APP_NAME = "GymBunnies.fit";
 const $ = (s, r = document) => r.querySelector(s);
@@ -133,16 +137,36 @@ function resolveEx(id, entry) {
 // Any plan day can be done at home: same day, same muscles, exercises swapped for their home gear (session.atHome).
 const progMemo = new WeakMap();
 function progOf(u) {
-  const p = P(u); let m = progMemo.get(p);
-  if (!m) { m = { A: PG.buildWeek(p, "A"), B: PG.buildWeek(p, "B"), homeA: PG.buildHome(p, "A"), homeB: PG.buildHome(p, "B") }; progMemo.set(p, m); }
+  const e = hEff(u); let m = progMemo.get(P(u));
+  if (!m || m.e !== e) { const p = planProf(u); m = { e, A: PG.buildWeek(p, "A"), B: PG.buildWeek(p, "B"), homeA: PG.buildHome(p, "A"), homeB: PG.buildHome(p, "B") }; progMemo.set(P(u), m); }
   return m;
 }
+// ---------------------------------------------------------------- health (this phone only; see js/health.js)
+// What someone's health answers change, for a profile whose answers are on this phone. null for everyone else.
+const hEff = u => (state.auth?.user?.uid ? H.effects(state.auth.user.uid, u) : null);
+const hEnergy = (u, date = TODAY()) => (hEff(u) ? H.energy(state.auth.user.uid, u, date) : null);
+// The profile the plan is built from: the saved one plus, in memory only, the limits from health answers.
+// Never pass this to saveProfile: it would send health-derived limits to the database.
+function planProf(u) {
+  const p = P(u), e = hEff(u); if (!e) return p;
+  return { ...p, limits: [...new Set([...(p.limits || []), ...e.limits])], injuries: [...new Set([...(p.injuries || []), ...e.injuries])] };
+}
+// Safer versions picked from health answers, worked out on this phone each time and never saved.
+const hTailorMemo = new WeakMap();
+function localTailor(u) {
+  const e = hEff(u); if (!e || (!e.limits.size && !e.injuries.size)) return {};
+  let t = hTailorMemo.get(e); if (!t) { t = TL.tailorPlan(planProf(u)); hTailorMemo.set(e, t); }
+  return t;
+}
+const tailorFor = (u, id) => localTailor(u)[id] || P(u).tailor?.[id] || null;
+// No automatic "try a heavier weight" when someone paces, or on a low or flare-up day.
+const noAutoUp = (u, date = TODAY()) => hEff(u)?.progression === "pace" || ["low", "flare"].includes(hEnergy(u, date));
 const curWeek = () => state.sel?.week || S.cycleInfo(TODAY(), cycleStart()).week;
 function daysFor(u, week = curWeek()) { const w = progOf(u)[week]; return w ? w.map(d => d.key) : DAYS; }
 function planDay(u, week, day) {
   const m = progOf(u);
   if (day === "Home") { const h = week === "B" ? m.homeB : m.homeA; return { title: h.title, ex: h.ex.map(id => resolveEx(id, {})).filter(Boolean) }; }
-  if (day === "Bonus") { const b = bonusPickFor(u, week); const w = PG.buildBonus(P(u), b.focus, b.where, week); return { title: w.title, ex: w.ex.map(id => resolveEx(id, {})).filter(Boolean) }; }
+  if (day === "Bonus") { const b = bonusPickFor(u, week); const w = PG.buildBonus(planProf(u), b.focus, b.where, week); return { title: w.title, ex: w.ex.map(id => resolveEx(id, {})).filter(Boolean) }; }
   const d = m[week]?.find(x => x.key === day);
   if (d) return { title: d.title, ex: d.ex.map(id => resolveEx(id, {})).filter(Boolean) };
   return PLAN[week][day] || PLAN[week].Mon;
@@ -268,7 +292,7 @@ function repeatedV(u, ex) {
 const validV = (ex, v) => !((v === "hard" && !ex.h) || (v === "swap" && !ex.swap) || (String(v).startsWith("lib:") && !libItem(String(v).slice(4))));
 // The version the questionnaire picked for this person, if it still exists.
 function tailoredV(u, ex) {
-  const t = P(u).tailor?.[ex.id]; if (!t) return null;
+  const t = tailorFor(u, ex.id); if (!t) return null;
   if ((t.v === "hard" && !ex.h) || (t.v === "swap" && !ex.swap) || (String(t.v).startsWith("lib:") && !libItem(t.v.slice(4)))) return null;
   return t.v;
 }
@@ -394,8 +418,12 @@ const dKey = (u, date, id) => `twp-x-${u}-${date}-${slotKey()}-${id}`;
 const editKey = (u, date, id) => `${u}|${date}|${slotKey()}|${id}`;
 
 function prefillSets(u, def, id, v, date = LD()) {
-  const light = deloadActive(u, date) ? x => ({ ...x, sets: lightSets(x.sets, def.db) }) : x => x;
-  const last = S.lastTime(state.data.sessions.filter(s => !deloadActive(u, s.date) || s.date === date), u, id, v);
+  const dl = deloadActive(u, date) ? x => ({ ...x, sets: lightSets(x.sets, def.db) }) : x => x;
+  // Energy check (this phone only): fewer sets and lighter weights on so-so, low and flare-up days.
+  const lvl = hEnergy(u, date); const E = lvl && C.ENERGY[lvl === "flare" && hEff(u)?.flare === "cutback" ? "low" : lvl];
+  const light = !E || !E.sets ? dl : x => { const y = dl(x); const n = Math.max(1, y.sets.length + E.sets); return { ...y, sets: y.sets.slice(0, n).map(s => ({ ...s, w: E.weight < 1 ? roundTo((+s.w || 0) * E.weight, def.db ? 2.5 : 5) : s.w })) }; };
+  const skip = hEff(u) ? H.lightDays(state.auth.user.uid, u) : null;
+  const last = S.lastTime(state.data.sessions.filter(s => (!deloadActive(u, s.date) && !skip?.has(s.date)) || s.date === date), u, id, v);
   const { sets, min, max } = S.parseRange(def.sr || "3 × 10");
   if (last && last.sets?.length) {
     // Last time's weights and reps, but today's number of sets (the same move can have 2 sets one day, 3 another).
@@ -447,7 +475,7 @@ function todaysList(u, date) {
   const s = sessionFor(u, date);
   const edits = dayEdits(u, week, day);
   let base = planDay(u, week, day).ex;
-  if (day !== "Bonus" && isHome(u, date)) base = PG.homeVersion(P(u), base).map(id => resolveEx(id, {})).filter(Boolean);
+  if (day !== "Bonus" && isHome(u, date)) base = PG.homeVersion(planProf(u), base).map(id => resolveEx(id, {})).filter(Boolean);
   const list = base.filter(ex => !edits.remove.includes(ex.id)).map(ex => ({ ex, added: false }));
   for (const id of edits.add) { const ex = resolveEx(id, {}); if (ex && !ex.custom) list.push({ ex, added: false, planned: true }); }
   if (edits.order?.length) list.sort((a, b) => { const ia = edits.order.indexOf(a.ex.id), ib = edits.order.indexOf(b.ex.id); return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib); });
@@ -855,6 +883,25 @@ function avatarGrid(cur, attrs, name = "A", color = "") {
   return `<div class="field"><span>Bunnies</span><div class="avatars">${Object.entries(BUNNIES).map(([id, x]) => b(`bun:${id}`, `<span class="av has-bun" style="--c:${esc(color || "var(--accent)")}" aria-hidden="true">${bunnySvg(id)}</span>`, x.n)).join("")}</div></div>
     <div class="field"><span>More</span><div class="avatars">${b("", esc((name || "A")[0].toUpperCase()), "Your first initial")}${AVATARS.map(x => b(x, x)).join("")}</div></div>`;
 }
+// On the Workout tab, for someone whose health answers are on this phone: the energy check and today's tips.
+function healthCard(u, date) {
+  const e = hEff(u); if (!e || date !== TODAY()) return "";
+  const lvl = hEnergy(u, date);
+  const ask = `<div class="seg" role="group" aria-label="Energy today">${Object.entries(C.ENERGY).map(([k, x]) => `<button type="button" data-act="hEnergy" data-v="${k}" aria-pressed="${lvl === k}">${esc(x.label)}</button>`).join("")}</div>`;
+  const flareText = C.FLARE[e.flare || "pause"];
+  const said = lvl === "flare" ? flareText : C.ENERGY[lvl]?.text || "";
+  const tips = [
+    e.supports.has("heat") ? "Keep cool: a cool room or a fan, cold water during the workout, and cardio at a cooler time of day. If a symptom flares with heat, it settles as you cool down." : "",
+    e.supports.has("sun") ? "Train indoors, or early or late in the day, out of strong sun." : "",
+    e.progression === "pace" ? "Stop while you still feel OK. The app won't raise weights or time for you." : ""
+  ].filter(Boolean);
+  return `<section class="card hf-today" aria-labelledby="hf-today-t">
+    <div class="between"><h2 class="h3" id="hf-today-t">${lvl ? `Energy today: ${esc(C.ENERGY[lvl].label)}` : "How's your energy today?"}</h2>${lvl ? `<button type="button" class="btn small" data-act="hEnergy" data-v="">Change</button>` : ""}</div>
+    ${lvl ? (said ? `<p>${esc(said)}</p>` : "") + (lvl !== "good" ? `<p class="small muted">Exercises you haven't started yet are set up for today.</p>` : "") + (lvl === "flare" ? `<button class="btn small" data-act="goView" data-v="stretch">Gentle stretching instead</button>` : "") : ask}
+    ${tips.length ? `<ul class="small hf-tips">${tips.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+    <p class="small muted"><span aria-hidden="true">🔒</span> Only on this phone.</p>
+  </section>`;
+}
 function saveProfile(id, fields) {
   const exists = state.data.profiles.some(p => p.id === id);
   const base = exists ? {} : (({ id: _i, updatedAt: _u, ...rest }) => rest)(P(id));
@@ -1169,7 +1216,7 @@ const a11yOn = () => { const a = A.get(); return Object.keys(A.DEFAULTS).filter(
 function openTimer(exId) {
   const ex = ALL_EX[exId] || resolveEx(exId, {});
   state.overlay = "timer";
-  state.timer = { ex, total: store.get("twp-rest", 90) };
+  state.timer = { ex, total: store.get("twp-rest", hEff(LU()) ? 120 : 90) };
   drawTimer();
 }
 function drawTimer() {
@@ -1179,6 +1226,7 @@ function drawTimer() {
     <div class="rest-tmr">${T.html("rest", t.total)}</div>
     <div class="row" style="justify-content:center">${[60, 90, 120].map(n => `<button class="btn small" data-act="timerSet" data-n="${n}" aria-pressed="${t.total === n}">${n}s</button>`).join("")}
       <button class="btn small" data-act="timerAdd" data-n="-15">−15</button><button class="btn small" data-act="timerAdd" data-n="15">+15</button></div>
+    ${hEff(LU())?.supports.has("heat") ? `<p class="small hf-tip"><span aria-hidden="true">💧</span> Sip some cold water while you rest.</p>` : ""}
     ${t.ex?.s?.length ? `<h3 class="h3">Stretch while you wait</h3>${t.ex.s.map(stretchBox).join("")}` : ""}
   </div></div>`;
 }
@@ -1351,6 +1399,9 @@ document.addEventListener("click", e => {
   if (act.startsWith("gym") && onGymClick(act, el)) return;
   if (act.startsWith("imp") && onImpClick(act, el)) return;
   if (act.startsWith("aft") && onAfterClick(act, el)) return;
+  if (act.startsWith("hf") && onHealthClick(act, el)) return;
+  if (act === "hEnergy") { H.setEnergy(state.auth.user.uid, LU(), TODAY(), v || null); render(); return; }
+  if (act === "hOpen") { openHealthEdit(); return; }
   switch (act) {
     case "newProfile": openOnboarding(null); break;
     case "obRetake": openOnboarding(state.user); break;
@@ -1765,6 +1816,7 @@ document.getElementById("gear").addEventListener("click", openSettings);
 
 document.addEventListener("input", e => {
   if (onGymInput(e.target)) return;
+  if (onHealthInput(e.target)) return;
   if (onAfterInput(e.target)) return;
   const el = e.target;
   if (el.dataset.f === "w" || el.dataset.f === "r") {
@@ -2013,7 +2065,7 @@ if ("serviceWorker" in navigator) {
 // ---------------------------------------------------------------- updates
 // Every time the app opens (or comes back to the front), ask the server which version is live.
 // If it's newer than this copy, throw the old copy away and reload. No buttons needed.
-const SHELL_FILES = ["./", "index.html", "css/styles.css", "js/app.js", "js/plan.js", "js/stats.js", "js/firebase.js", "js/library.js", "js/fun.js", "js/safety.js", "js/timer.js", "js/a11y.js", "js/icons.js", "js/tailor.js", "js/program.js", "js/stretch.js", "js/anatomy.js", "js/equipment.js", "js/muscles.js", "js/exsearch.js", "js/bunnies.js", "js/views/areas.js", "js/views/bodymap.js", "js/views/body.js", "js/views/crew.js", "js/views/feedback.js", "js/views/gyms.js", "js/views/import.js", "js/views/after.js", "js/importer.js", "js/views/progress.js", "js/views/questionnaire.js", "js/views/review.js", "js/views/settings.js", "js/views/stretch.js", "js/views/usage.js", "js/views/workout.js", "app-v41.webmanifest", "sw.js"];
+const SHELL_FILES = ["./", "index.html", "css/styles.css", "js/app.js", "js/plan.js", "js/stats.js", "js/firebase.js", "js/library.js", "js/fun.js", "js/safety.js", "js/timer.js", "js/a11y.js", "js/icons.js", "js/tailor.js", "js/program.js", "js/stretch.js", "js/anatomy.js", "js/equipment.js", "js/muscles.js", "js/exsearch.js", "js/bunnies.js", "js/health.js", "js/conditions.js", "js/views/healthform.js", "js/views/areas.js", "js/views/bodymap.js", "js/views/body.js", "js/views/crew.js", "js/views/feedback.js", "js/views/gyms.js", "js/views/import.js", "js/views/after.js", "js/importer.js", "js/views/progress.js", "js/views/questionnaire.js", "js/views/review.js", "js/views/settings.js", "js/views/stretch.js", "js/views/usage.js", "js/views/workout.js", "app-v41.webmanifest", "sw.js"];
 async function liveVersion() {
   try { const r = await fetch(`sw.js?check=${Date.now()}`, { cache: "no-store" }); const m = /VERSION = "twp-v(\d+)"/.exec(await r.text()); return m ? m[1] : null; } catch { return null; }
 }
@@ -2043,4 +2095,4 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 try { const from = sessionStorage.getItem("twp-updated-from"); if (from) { sessionStorage.removeItem("twp-updated-from"); setTimeout(() => toast(from === APP_VERSION ? `Up to date: version ${APP_VERSION}.` : `Updated to version ${APP_VERSION}.`), 800); } } catch { /* ignore */ }
 
 // Shared with the screens in js/views/.
-export { $, APP_VERSION, avatarGrid, logAfter, allGyms, crewGyms, currentGym, gymById, newGymId, saveMyGyms, updateGym, AVATARS, DIFF, FUN_LEVELS, GROUPS, LD, LU, P, PROFILES, PROFILE_DEFAULTS, THEMES, TODAY, VARIANT_NOTE, a11yOn, aches, autoSel, avatarHtml, baseDay, bonusDates, bonusPickFor, bonusPicker, canSee, cardioProgram, closeOverlay, conflicts, crewCard, crewSettings, cyclePlan, cycleStart, dayEdits, dayName, dayStatus, dayTitle, daysFor, defOf, deloadActive, deloadOf, deloadSuggestion, editKey, esc, funAt, funHeader, getDraft, gymSet, isHome, libItem, listText, nextPlanDay, other, otherSlotOn, paceOf, personToggle, planDay, planEditBox, profileIds, reminders, render, resolveEx, ring, riskBlock, saveProfile, seg, sessionFor, shareOf, slotDate, slotKey, slug, srFor, state, stopAll, store, supersetIdeas, toast, todaysList, vLabel, variantOf, warmupCard, workoutBar, yt, ytStretch };
+export { $, APP_VERSION, avatarGrid, hEff, hEnergy, healthCard, noAutoUp, tailorFor, logAfter, allGyms, crewGyms, currentGym, gymById, newGymId, saveMyGyms, updateGym, AVATARS, DIFF, FUN_LEVELS, GROUPS, LD, LU, P, PROFILES, PROFILE_DEFAULTS, THEMES, TODAY, VARIANT_NOTE, a11yOn, aches, autoSel, avatarHtml, baseDay, bonusDates, bonusPickFor, bonusPicker, canSee, cardioProgram, closeOverlay, conflicts, crewCard, crewSettings, cyclePlan, cycleStart, dayEdits, dayName, dayStatus, dayTitle, daysFor, defOf, deloadActive, deloadOf, deloadSuggestion, editKey, esc, funAt, funHeader, getDraft, gymSet, isHome, libItem, listText, nextPlanDay, other, otherSlotOn, paceOf, personToggle, planDay, planEditBox, profileIds, reminders, render, resolveEx, ring, riskBlock, saveProfile, seg, sessionFor, shareOf, slotDate, slotKey, slug, srFor, state, stopAll, store, supersetIdeas, toast, todaysList, vLabel, variantOf, warmupCard, workoutBar, yt, ytStretch };

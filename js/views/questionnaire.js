@@ -3,12 +3,15 @@ import { $, GROUPS, avatarGrid, P, PROFILE_DEFAULTS, closeOverlay, dayName, esc,
 import * as PG from "../program.js";
 import * as TL from "../tailor.js";
 import { track } from "./usage.js";
+import * as H from "../health.js";
+import * as C from "../conditions.js";
+import { blankHealth, healthDraft, healthFormHtml, summary as healthSummary } from "./healthform.js";
 import { ALL_EX, DAYS, FOCUS, PAIN_AREAS, PLAN } from "../plan.js";
 
 // ---------------------------------------------------------------- onboarding questionnaire
 // One question per screen. New people go through it when they're added; anyone can retake it from Settings.
 // Finishing tailors the plan to them (see tailor.js) and saves the answers on their profile.
-const OB_STEPS = ["name", "goals", "focus", "experience", "schedule", "injuries", "limits", "home", "cardio", "review"];
+const OB_STEPS = ["name", "goals", "focus", "experience", "schedule", "injuries", "limits", "health", "home", "cardio", "review"];
 function openOnboarding(id) {
   state.overlay = "onboard";
   const p = id ? P(id) : { ...PROFILE_DEFAULTS, name: "", color: ["#2f6b5e", "#4b5d8a", "#b5532f", "#8a5a9c", "#2e7d4f", "#9a6b12"][profileIds().length % 6] };
@@ -17,12 +20,15 @@ function openOnboarding(id) {
     experience: p.experience || "", intensity: p.intensity || "steady", days: p.daysPerWeek || 4, sessionLen: p.sessionLen || 60,
     style: p.planStyle || "auto", homeGear: [...(p.homeGear || [])],
     injuries: id ? [...(p.injuries || [])] : [], injuryNote: p.injuryNote || "", limits: [...(p.limits || [])], limitNote: p.limitNote || "",
-    cardio: p.cardio || "steady", commute: !!p.commute?.enabled, miles: p.commute?.miles || ""
+    cardio: p.cardio || "steady", commute: !!p.commute?.enabled, miles: p.commute?.miles || "",
+    // Health answers live only on this phone (js/health.js) and are never part of the saved profile.
+    health: id ? healthDraft(H.load(state.auth?.user?.uid, id)) : blankHealth()
   } };
   drawOnboarding();
 }
 function obAnswers() { const a = state.ob.a; return { injuries: a.injuries, limits: a.limits, experience: a.experience || "some", intensity: a.intensity }; }
-function drawOnboarding() {
+function drawOnboarding(keep) {
+  const top = $("#overlay .overlay")?.scrollTop || 0;
   const o = state.ob, a = o.a, step = OB_STEPS[o.step], n = OB_STEPS.length;
   const multi = (k, opts, none) => `<div class="focus-chips ob-chips" role="group">${opts.map(([v, l]) => `<button type="button" data-act="obToggle" data-k="${k}" data-v="${v}" aria-pressed="${a[k].includes(v)}">${esc(l)}</button>`).join("")}${none ? `<button type="button" data-act="obNone" data-k="${k}" aria-pressed="${!a[k].length}">${esc(none)}</button>` : ""}</div>`;
   const single = (k, opts) => `<div class="ob-choices" role="radiogroup">${opts.map(([v, l, sub]) => `<button type="button" role="radio" data-act="obPick" data-k="${k}" data-v="${v}" aria-checked="${String(a[k]) === String(v)}"><b>${esc(l)}</b>${sub ? `<small>${esc(sub)}</small>` : ""}</button>`).join("")}</div>`;
@@ -50,6 +56,7 @@ function drawOnboarding() {
   if (step === "cardio") body = q("How do you like your cardio?", "", single("cardio", [["steady", "Steady", "Bike, elliptical, or walking at a pace you can talk at"], ["intervals", "Steady plus intervals", "Two days a week of hard and easy bursts"]])) +
     `<label class="check"><input type="checkbox" data-ob="commute" ${a.commute ? "checked" : ""}><span>I bike or walk to work (counts as cardio)</span></label>
      <label class="field">Round-trip miles (optional)<input type="number" inputmode="decimal" step="any" data-ob="miles" value="${esc(a.miles)}"></label>`;
+  if (step === "health") body = q("Any health conditions?", "Optional. Pick any that apply, and your plan follows the published exercise guidelines for each one.", healthFormHtml(a.health));
   if (step === "review") {
     const t = TL.tailorPlan(obAnswers()); const list = Object.entries(t);
     const line = ([exId, x]) => { const ex = ALL_EX[exId]; const nm = x.v === "hard" ? ex.h?.n : x.v === "swap" ? ex.swap?.n : libItem(x.v.slice(4))?.name; return `<li><b>${esc(ex.n)}</b> → ${esc(nm || "")}<br><span class="small muted">${esc(x.why)} · Week ${ex.week} ${dayName(ex.day)}</span></li>`; };
@@ -66,6 +73,10 @@ function drawOnboarding() {
          ${gentle.length ? `<details class="more" open><summary>Gentler or safer for you (${gentle.length})</summary><div class="panel"><ul class="ob-list">${gentle.map(line).join("")}</ul></div></details>` : ""}
          ${harder.length ? `<details class="more"><summary>Tougher versions (${harder.length})</summary><div class="panel"><ul class="ob-list">${harder.map(line).join("")}</ul></div></details>` : ""}`
         : `<p>The standard plan already fits you, so nothing needed changing. You can still pick a different version of any exercise on its card.</p>`}
+       ${(() => { const e = C.effectsOf(a.health); if (!e.conditions.length && !a.health.symptoms.length && !e.supports.size) return "";
+          const extra = Object.keys(TL.tailorPlan({ ...obAnswers(), limits: [...new Set([...a.limits, ...e.limits])], injuries: [...new Set([...a.injuries, ...e.injuries])] })).filter(k => !t[k]).length;
+          return `<section class="card ob-sum"><h3 class="h3"><span aria-hidden="true">🔒</span> Health, on this phone only</h3><p>${esc(listText(e.conditions.map(c => c.name)) || "Symptoms you picked")}.${extra ? ` ${extra} more exercise${extra === 1 ? "" : "s"} switched to safer versions.` : ""} ${esc(healthSummary(e))}</p>
+            ${e.clearance.length ? `<p class="small"><b>Before you start:</b> ${e.clearance.map(esc).join(" ")}</p>` : ""}</section>`; })()}
        <p class="small muted">Change any of this later in Settings → Your plan → Retake the questionnaire.</p>`);
   }
   const canNext = step !== "name" || a.name.trim();
@@ -76,6 +87,7 @@ function drawOnboarding() {
     <div class="ob-nav">${o.step ? `<button class="btn" data-act="obBack">Back</button>` : "<span></span>"}
       ${step === "review" ? `<button class="btn primary" data-act="obFinish">${o.id ? "Save my plan" : "Start training"}</button>` : `<button class="btn primary" data-act="obNext" ${canNext ? "" : "disabled"}>${step === "cardio" ? "See my plan" : "Next"}</button>`}</div>
   </div></div>`;
+  if (keep) { const o2 = $("#overlay .overlay"); if (o2) o2.scrollTop = top; return; }
   const h = $("#ob-q"); h?.focus({ preventScroll: true }); $("#overlay .overlay")?.scrollTo(0, 0);
 }
 function finishOnboarding() {
@@ -92,6 +104,8 @@ function finishOnboarding() {
     defaultVariant: harder ? "hard" : "std", cardio: a.cardio, commute: { enabled: !!a.commute, miles: +a.miles || 0 },
     tailorList: Object.entries(tailor).map(([exId, t]) => ({ id: exId, v: t.v, why: t.why })), onboardedAt: Date.now()
   });
+  // Health answers: this phone only. Never part of saveProfile above.
+  const health = { ...a.health }; delete health.q; H.save(state.auth?.user?.uid, id, health);
   // Tailored picks win over a version chosen earlier on this phone.
   for (const exId of Object.keys(tailor)) delete state.variants[`${id}:${exId}`];
   store.set("twp-variants", state.variants);

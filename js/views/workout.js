@@ -1,5 +1,5 @@
 // The Workout tab: today's plan and logging in one place.
-import { DIFF, LD, LU, P, PROFILES, allGyms, currentGym, TODAY, VARIANT_NOTE, autoSel, baseDay, bonusPickFor, bonusPicker, cardioProgram, conflicts, cycleStart, dayName, dayStatus, dayTitle, daysFor, defOf, deloadActive, deloadOf, deloadSuggestion, editKey, esc, funAt, funHeader, getDraft, gymSet, isHome, libItem, listText, nextPlanDay, other, otherSlotOn, personToggle, planEditBox, reminders, ring, riskBlock, seg, sessionFor, slotDate, slotKey, srFor, state, store, supersetIdeas, todaysList, vLabel, variantOf, warmupCard, workoutBar, yt, ytStretch } from "../app.js";
+import { DIFF, LD, LU, P, PROFILES, healthCard, noAutoUp, tailorFor, allGyms, currentGym, TODAY, VARIANT_NOTE, autoSel, baseDay, bonusPickFor, bonusPicker, cardioProgram, conflicts, cycleStart, dayName, dayStatus, dayTitle, daysFor, defOf, deloadActive, deloadOf, deloadSuggestion, editKey, esc, funAt, funHeader, getDraft, gymSet, isHome, libItem, listText, nextPlanDay, other, otherSlotOn, personToggle, planEditBox, reminders, ring, riskBlock, seg, sessionFor, slotDate, slotKey, srFor, state, store, supersetIdeas, todaysList, vLabel, variantOf, warmupCard, workoutBar, yt, ytStretch } from "../app.js";
 import * as A from "../a11y.js";
 import * as PG from "../program.js";
 import * as S from "../stats.js";
@@ -46,6 +46,7 @@ function viewToday() {
       return `<div class="banner">That's the last one this week. Tap <b>Finish workout</b> when you're done to see your week in review.</div>`;
     }
     return ""; })()}
+  ${healthCard(u, date)}
   ${dl ? `<div class="banner"><b>Lighter week</b> until ${S.fmtDate(deloadOf(u).to)}: about 60% of your usual weights and one less set. <button class="btn small" data-act="endDeload">End it early</button></div>` : dlSug ? `<div class="banner">${esc(dlSug)} <button class="btn small" data-act="startDeload">Start a lighter week</button></div>` : ""}
   <section class="today-top" aria-labelledby="today-title">
     ${weekRow}
@@ -170,7 +171,7 @@ function exerciseCard(u, date, ex, added, s, idx = 0, count = 0, cardOpts = {}) 
   // Nothing for this exact version, but something else was logged here last time: point to it.
   const prevAny = !last && !ex.custom ? S.lastTime(state.data.sessions, u, ex.id) : null;
   const prevV = prevAny && (prevAny.variant || "std") !== v && S.defFor(ex.id, prevAny.variant || "std", prevAny).name !== def.name ? prevAny : null;
-  const sug = ex.custom ? null : S.suggestion(state.data.sessions, u, ex.id, v);
+  const sug = ex.custom ? null : (s => (s?.type === "up" && noAutoUp(u, date) ? null : s))(S.suggestion(state.data.sessions, u, ex.id, v));
   const pu = other(u), pLast = state.partner ? S.lastTime(state.data.sessions, pu, ex.id, ex.custom ? "std" : variantOf(pu, ex)) : null;
   const entry = { kind: def.kind, db: def.db };
   const target = srFor(u, ex, def);
@@ -190,7 +191,7 @@ function exerciseCard(u, date, ex, added, s, idx = 0, count = 0, cardOpts = {}) 
     ${head}<div class="ex-body" id="exb-${ex.id}">
     ${sore.high.length ? `<div class="pill hold">Hard on your ${esc(listText(sore.high.map(j => (JOINTS[j] || j).toLowerCase())))} today. Consider the Alternative or Library version.</div>` : sore.some.length ? `<div class="small warn-text">Some load on your ${esc(listText(sore.some.map(j => (JOINTS[j] || j).toLowerCase())))} today.</div>` : ""}
     ${opts.length > 1 ? seg("variant", String(v).startsWith("lib:") ? "lib" : v, opts, "Version") + `<p class="v-note small"><b>${esc(vLabel(v))}:</b> ${esc(VARIANT_NOTE[String(v).startsWith("lib:") ? "lib" : v] || "")}</p>` : ""}
-    ${(() => { const t = P(u).tailor?.[ex.id]; return t && t.v === v ? `<p class="tailor-note small"><span aria-hidden="true">✨</span> Picked for you: ${esc(t.why)}.</p>` : ""; })()}
+    ${(() => { const t = tailorFor(u, ex.id); return t && t.v === v ? `<p class="tailor-note small"><span aria-hidden="true">✨</span> Picked for you: ${esc(t.why)}.</p>` : ""; })()}
     ${why ? `<div class="why">${esc(why)}</div>` : ""}
     ${lib ? `<div class="row"><a class="video" href="${yt(lib.name)}" target="_blank" rel="noopener">Watch form videos</a><button class="btn small" data-act="libSwap">Change machine</button></div>` : ""}
     ${lib?.tip ? `<div class="small muted"><b>Setup:</b> ${esc(lib.tip)}</div>` : ""}

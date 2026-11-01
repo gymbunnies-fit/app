@@ -1,5 +1,5 @@
 // The Progress tab: calendar, badges, points, report and charts.
-import { DIFF, P, PROFILES, TODAY, avatarHtml, bonusDates, cycleStart, dayName, esc, funAt, listText, paceOf, personToggle, profileIds, seg, state } from "../app.js";
+import { DIFF, P, PROFILES, TODAY, noAutoUp, avatarHtml, bonusDates, cycleStart, dayName, esc, funAt, listText, paceOf, personToggle, profileIds, seg, state } from "../app.js";
 import * as A from "../a11y.js";
 import * as F from "../fun.js";
 import * as S from "../stats.js";
@@ -65,7 +65,7 @@ function progLifts() {
   const def = S.defFor(id, v, h[h.length - 1]);
   const loggedOpts = [...logged.entries()].map(([k, n]) => `<option value="${esc(k)}" ${k === state.progEx ? "selected" : ""}>${esc(n)}${k.endsWith("|hard") ? " (harder)" : k.endsWith("|swap") ? " (swap)" : k.includes("|lib:") ? " (library swap)" : ""}</option>`).join("");
   const planOpts = Object.values(ALL_EX).filter(e => !logged.has(`${e.id}|std`)).map(e => `<option value="${e.id}|std" ${`${e.id}|std` === state.progEx ? "selected" : ""}>${esc(e.n)} · ${e.week} ${dayName(e.day)}</option>`).join("");
-  const sug = ALL_EX[id] ? S.suggestion(state.data.sessions, u, id, v) : null;
+  const sug = ALL_EX[id] ? (x => (x?.type === "up" && noAutoUp(u) ? null : x))(S.suggestion(state.data.sessions, u, id, v)) : null;
   let tiles = "", table = "";
   if (h.length) {
     const pb = S.personalBest(state.data.sessions, u, id, v);

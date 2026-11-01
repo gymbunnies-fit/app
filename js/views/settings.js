@@ -1,8 +1,9 @@
 // Settings, including Delete my account.
-import { $, APP_VERSION, FUN_LEVELS, P, THEMES, TODAY, a11yOn, crewSettings, cycleStart, esc, other, personToggle, profileIds, state, stopAll, store, toast } from "../app.js";
+import { $, APP_VERSION, FUN_LEVELS, hEff, P, THEMES, TODAY, a11yOn, crewSettings, cycleStart, esc, other, personToggle, profileIds, state, stopAll, store, toast } from "../app.js";
 import * as A from "../a11y.js";
 import * as S from "../stats.js";
 import { fbMine, fbNew } from "./feedback.js";
+import { PRIVACY_LINE, summary as healthSummary, whyHtml } from "./healthform.js";
 import { cssVar } from "./progress.js";
 import { ev, isAdmin } from "./usage.js";
 import { deleteEverything, reauth } from "../firebase.js";
@@ -77,6 +78,13 @@ function openSettings() {
     <section class="card"><h3 class="h3">Your plan</h3>
       <p class="small">${p.onboardedAt ? `Tailored from your questionnaire: ${p.daysPerWeek || 4} day${(p.daysPerWeek || 4) === 1 ? "" : "s"} a week${(p.tailorList || []).length ? `, ${p.tailorList.length} exercise${p.tailorList.length === 1 ? "" : "s"} adjusted for you` : ""}.` : "Answer a few questions about your goals, injuries, and schedule, and the plan adjusts to fit you."}</p>
       <div class="row"><button class="btn primary small" data-act="obRetake">${p.onboardedAt ? "Retake the questionnaire" : "Tailor my plan"}</button>${(p.tailorList || []).length ? `<button class="btn small" data-act="tailorOff">Use the standard plan</button>` : ""}</div></section>
+    ${(() => { const e = hEff(u);
+      return `<section class="card" aria-labelledby="hf-set-t"><h3 class="h3" id="hf-set-t"><span aria-hidden="true">🔒</span> Health conditions</h3>
+      <p class="small">${e ? esc(e.conditions.map(c => c.name).join(", ") || "Symptoms picked, no conditions.") + " " + esc(healthSummary(e)) : "None added. Add any conditions and the plan follows the published exercise guidelines for each."}</p>
+      <p class="small muted">${esc(PRIVACY_LINE)}</p>
+      <div class="row"><button class="btn small primary" data-act="hOpen">${e ? "Change" : "Add conditions"}</button>${e ? `<button class="btn small danger" data-act="hfRemoveAll">${state.confirmDel === "health" ? "Tap again to remove" : "Remove from this phone"}</button>` : ""}</div>
+      ${e?.clearance.length ? `<p class="small"><b>Before you start:</b> ${e.clearance.map(esc).join(" ")}</p>` : ""}
+      ${e?.conditions.length ? `<h4 class="h3">Why this plan</h4>${whyHtml(e)}` : ""}</section>`; })()}
     <section class="card"><h3 class="h3">Who's using this phone</h3>${personToggle("pickUser", u)}
       <div class="row"><button class="btn small" data-act="editProfile">Edit ${esc(p.name)}'s profile</button><button class="btn small" data-act="newProfile">+ New person</button></div>
       ${profileIds().length > 1 ? `<label class="check"><input type="checkbox" data-act="partner" ${state.partner ? "checked" : ""}><span>Partner mode: log for a partner from this phone</span></label>` : ""}

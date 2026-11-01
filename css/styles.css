@@ -1043,3 +1043,17 @@ label.btn:focus-within{outline:2px solid var(--accent);outline-offset:2px}
 .av-pick{border:0;padding:0;margin:0;min-width:0}
 .av-pick legend{padding:0;margin-bottom:6px;font-weight:600}
 .avatars button .av{margin:0;width:32px;height:32px;font-size:1rem;vertical-align:middle}
+
+/* Health conditions (kept on this phone only) */
+.hf{display:grid;gap:12px}
+.hf-lock{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:0}
+.hf-seg{flex-wrap:wrap}
+.hf-seg button{flex:1 1 auto;min-height:44px}
+.hf-cond .field{margin-top:8px}
+.hf-note,.hf-tip{margin:6px 0 0}
+.hf-today .seg{flex-wrap:wrap}
+.hf-today .seg button{flex:1 1 40%;min-height:44px}
+.hf-tips{margin:8px 0 0;padding-left:1.1em}
+.hf .field,.hf-cond .field{display:grid;gap:6px}
+.seg button[aria-checked="true"]{background:var(--inset);box-shadow:inset 0 -2px 0 var(--accent);color:var(--ink);font-weight:700}
+body.a11y-colorSafe .seg button[aria-checked="true"]{text-decoration:underline;text-decoration-thickness:3px;text-underline-offset:4px}

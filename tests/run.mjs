@@ -493,6 +493,64 @@ for (const b of BUILTIN) {
   eq("import: a stated length counts as the workout time", [S.workoutDuration({ minutes: 50 }), S.workoutDuration({ minutes: 900 })], [50 * 60e3, null]);
 }
 
+// ---- health conditions: rules, on-device storage, and privacy guards
+{
+  const { readFileSync, readdirSync } = await import("node:fs");
+  const C = await import(join(here, "../js/conditions.js"));
+  const ids = C.CONDITIONS.map(c => c.id);
+  yes("every condition has sources", C.CONDITIONS.every(c => c.sources.length && c.sources.every(x => /^https:\/\//.test(x.url))));
+  yes("condition ids are unique", new Set(ids).size === ids.length);
+  yes("every follow-up support exists", C.CONDITIONS.every(c => c.followUps.every(f => Object.values(f.effects).every(e => (e.supports || []).every(s => C.SUPPORTS[s])))));
+  const ms = C.effectsOf({ conditions: ["ms"], answers: { "ms.heat": "yes", "ms.balance": "yes" } });
+  yes("MS with heat turns on heat tips", ms.supports.has("heat"));
+  yes("MS with shaky balance avoids balance-risky moves", ms.limits.has("balance"));
+  eq("MS builds up", ms.progression, "build");
+  eq("MS flare pauses", ms.flare, "pause");
+  eq("long COVID without crashes builds", C.effectsOf({ conditions: ["longcovid"], answers: { "longcovid.pem": "no" } }).progression, "build");
+  eq("long COVID with crashes paces", C.effectsOf({ conditions: ["longcovid"], answers: { "longcovid.pem": "yes" } }).progression, "pace");
+  eq("the safest rule wins (MS + ME/CFS paces)", C.effectsOf({ conditions: ["ms", "mecfs"] }).progression, "pace");
+  eq("crashes answered in the function questions pace any plan", C.effectsOf({ conditions: ["oa"], fn: { pem: "yes" } }).progression, "pace");
+  yes("osteoporosis protects the spine", C.effectsOf({ conditions: ["osteo"] }).limits.has("noSpineFlex"));
+  yes("type 2 diabetes asks for a doctor's OK", C.effectsOf({ conditions: ["t2d"] }).clearance.length > 0);
+  yes("arthritis in the knees eases knee load", C.effectsOf({ conditions: ["oa"], answers: { "oa.knees": "yes" } }).injuries.has("knees"));
+  yes("a wheelchair user gets seated options", C.effectsOf({ fn: { aid: "wheelchair" } }).seated);
+  yes("nothing picked changes nothing", !C.effectsOf({ conditions: [], symptoms: [] }).supports.size);
+  const TLm = await import(join(here, "../js/tailor.js"));
+  yes("spine protection swaps the floor deadlift", TLm.tailorPlan({ limits: ["noSpineFlex"], injuries: [] })["a-wed-dl"]?.why === "Easier on your spine");
+  // search finds conditions by other names
+  const XS2 = await import(join(here, "../js/exsearch.js"));
+  const citems = C.CONDITIONS.map(c => ({ id: c.id, name: c.name, tags: c.tags }));
+  for (const [q, id] of [["fibro", "fibro"], ["SLE", "lupus"], ["ms", "ms"], ["CFS", "mecfs"], ["arthritis", "oa"], ["diabetes", "t2d"], ["osteopenia", "osteo"]])
+    eq(`"${q}" finds ${id}`, XS2.searchExercises(q, citems, 1)[0]?.item.id, id);
+  // on-device storage
+  const mem = {}; globalThis.localStorage = { getItem: k => (k in mem ? mem[k] : null), setItem: (k, v) => { mem[k] = String(v); }, removeItem: k => { delete mem[k]; }, key: i => Object.keys(mem)[i], get length() { return Object.keys(mem).length; } };
+  Object.defineProperty(globalThis.localStorage, "keys", { value: () => Object.keys(mem) });
+  const H = await import(join(here, "../js/health.js"));
+  H.save("u1", "erica", { conditions: ["ms"], answers: {}, symptoms: [], fn: {} });
+  yes("health is saved under a gbh- key, not twp-", Object.keys(mem).some(k => k === "gbh-u1-erica") && !Object.keys(mem).some(k => k.startsWith("twp-")));
+  eq("another account on the phone sees nothing", H.load("u2", "erica"), null);
+  yes("effects come back for the right person", H.effects("u1", "erica")?.conditions[0]?.id === "ms");
+  H.setEnergy("u1", "erica", "2026-11-01", "low");
+  yes("low days are remembered as light days", H.lightDays("u1", "erica").has("2026-11-01"));
+  H.save("u1", "erica", { conditions: [], symptoms: [], fn: {} });
+  eq("saving nothing removes the record", mem["gbh-u1-erica"], undefined);
+  delete globalThis.localStorage;
+  // Privacy guards: health code never touches the network, and nothing health-related is ever passed to anything that writes or sends.
+  const src = f => readFileSync(join(here, "..", f), "utf8");
+  for (const f of ["js/health.js", "js/conditions.js"]) yes(`${f} imports nothing that can send data`, !/from\s+"[^"]*(firebase|usage|feedback|app)\.js"/.test(src(f)));
+  yes("the health form imports no database code", !/firebase\.js/.test(src("js/views/healthform.js")));
+  const files = ["js/app.js", ...readdirSync(join(here, "../js/views")).map(f => `js/views/${f}`), ...readdirSync(join(here, "../js")).filter(f => f.endsWith(".js")).map(f => `js/${f}`)];
+  const sinks = /\b(save|patch|saveProfile|saveMany|importAll|track|bump|sendFeedback|addDoc|setDoc|updateDoc)\s*\(/;
+  const bad = [];
+  for (const f of [...new Set(files)]) src(f).split("\n").forEach((line, i) => { if (sinks.test(line) && /\b(hEff|hEnergy|planProf|localTailor|H\.\w+|a\.health|state\.hForm|effectsOf|conditions)\b/.test(line) && !/H\.save\(|H\.clear|H\.setEnergy/.test(line)) bad.push(`${f}:${i + 1}`); });
+  eq("no health data next to a database or usage write", bad.join(", "), "");
+  yes("onboarding never saves health with the profile", !/saveProfile\([^)]*health/.test(src("js/views/questionnaire.js")));
+  yes("usage counting skips health taps", /\^\[tc\]_\(hf\|hEnergy\|hOpen\)/.test(src("js/views/usage.js")));
+  yes("backups contain only crew data", /const data = \{ app: "gymbunnies\.fit", exportedAt: new Date\(\)\.toISOString\(\), \.\.\.state\.data \};/.test(src("js/app.js")));
+  yes("sign-out keeps health keys (only twp- keys are cleared)", /k\.startsWith\("twp-"\)/.test(src("js/app.js")));
+  yes("account deletion clears this account's keys", /k\.includes\(uid\)/.test(src("js/views/settings.js")));
+}
+
 await (await import("./app-logic.mjs")).run({ dir, here, eq, yes });
 
 console.log(`\n${pass} passed, ${fail} failed`);

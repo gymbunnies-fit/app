@@ -39,6 +39,8 @@ const evBuf = {}; let evTimer = null, visStart = document.visibilityState === "v
 function ev(name, n = 1) {
   if (!state.auth?.user || !state.auth.crewId) return;
   const k = String(name).replace(/[^A-Za-z0-9_]/g, "_").slice(0, 40); if (!k) return;
+  // Health actions (this phone only) are never counted, not even as a tap.
+  if (/^[tc]_(hf|hEnergy|hOpen)/.test(k)) return;
   evBuf[k] = (evBuf[k] || 0) + n;
   if (!evTimer) evTimer = setTimeout(flushEv, 60000);
 }

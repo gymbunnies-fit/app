@@ -31,6 +31,8 @@ const IMPACT = /jump|hop|skip|burpee|box jump|bound/i;
 const OVERHEAD = /shoulder press|overhead|pull-up|pullup|chin-up|dip\b|military|arnold/i;
 const GRIP = /carry|farmer|suitcase|dead hang|hang\b/i;
 const BALANCE = /lunge|split squat|single-leg|step-up|bulgarian|walking/i;
+// Spine bending and twisting under load (osteoporosis): sit-ups, crunches, twists, and lifting from the floor.
+const SPINE_FLEX = /crunch|sit-up|situp|russian twist|woodchop|toe touch|v-up|side bend|bicycle|jackknife|roll-up|rollup|good morning|(?<!romanian |single-leg |stiff-leg )deadlift|toes to bar/i;
 
 const FLOOR_TEXT = /lie flat|lie on your back|on your back|on the floor|on all fours|face ?down on the floor/i;
 function facts(c) {
@@ -41,6 +43,7 @@ function facts(c) {
     impact: c.impact != null ? c.impact >= 1 : IMPACT.test(name),
     overhead: OVERHEAD.test(name) || ((c.focus || [])[0] === "shoulders" && c.pattern === "push"),
     grip: GRIP.test(name),
+    spineFlex: SPINE_FLEX.test(name),
     balance: c.unilateral != null ? (c.unilateral && /standing|lunge|split|step/i.test(name + (c.position || ""))) || BALANCE.test(name) : BALANCE.test(name),
     difficulty: c.difficulty || 0
   };
@@ -60,12 +63,13 @@ function cost(c, prof) {
   if (L.has("noSpine") && (f.joints.lowerBack || 0) >= 2) { n += 10; why.push("noSpine"); }
   if (L.has("grip") && f.grip) { n += 10; why.push("grip"); }
   if (L.has("balance") && f.balance) { n += 10; why.push("balance"); }
+  if (L.has("noSpineFlex") && f.spineFlex) { n += 20; why.push("noSpineFlex"); }
   if (prof.experience === "new" && f.difficulty >= 3) n += 5;
   return { n, why };
 }
 
 const AREA_WORD = a => (PAIN_AREAS[a] || a).toLowerCase();
-const LIMIT_WHY = { noFloor: "no floor work", noImpact: "no jumping", noOverhead: "nothing overhead", noSpine: "less load on your back", grip: "easier on your grip", balance: "more stable" };
+const LIMIT_WHY = { noFloor: "no floor work", noImpact: "no jumping", noOverhead: "nothing overhead", noSpine: "less load on your back", grip: "easier on your grip", balance: "more stable", noSpineFlex: "easier on your spine" };
 function reason(fixed) {
   const areas = fixed.filter(x => PAIN_AREAS[x]).map(AREA_WORD);
   const lims = fixed.filter(x => LIMIT_WHY[x]).map(x => LIMIT_WHY[x]);
@@ -124,7 +128,7 @@ export function tailorPlan(prof, { lib = BUILTIN, exercises = Object.values(ALL_
     const base = scored[0];
     let best = scored.slice().sort((a, b) => a.total - b.total)[0];
     // Still breaking a hard limit (floor, impact, overhead)? Look wider: any library move for the same muscles.
-    if (best.why.some(w => ["noFloor", "noImpact", "noOverhead"].includes(w))) {
+    if (best.why.some(w => ["noFloor", "noImpact", "noOverhead", "noSpineFlex"].includes(w))) {
       const more = libraryFor(ex, lib, null).filter(b => !same.has(b.id) && !cands.some(c => c.v === `lib:${b.id}`)).map(b => ({ v: `lib:${b.id}`, c: b, bias: 5 }));
       scored = [...scored, ...score(more)];
       best = scored.slice().sort((a, b) => a.total - b.total)[0];
