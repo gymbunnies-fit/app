@@ -39,6 +39,23 @@ const SUPINE = /bench press|flat bench|skull|pullover|dead bug|glute bridge|hip 
 // Loaded end-of-range positions (hypermobility): deep stretches under load, dips, overhead lockouts.
 const END_RANGE = /\bfly\b|(?<!reverse )pec deck|\bdip|pullover|deep|sissy|jefferson|good morning|deficit|pistol|cossack|bulgarian|behind the neck|stretch/i;
 // Free weights over the face or head (seizures): dumbbells or a barbell pressed lying down or overhead.
+// Limbs someone can't use for exercise (from the private health answers): those moves are left out and replaced with
+// moves for muscles they can use, never shown with a "skip" button.
+export const LOWER = ["legs", "glutes", "calves"], UPPER = ["chest", "back", "shoulders", "arms"];
+const LEGS_NAME = /back extension|hyperextension|lower back machine|assisted (dip|pull)|sit-?up|situp|squat|lunge|deadlift|\brdl\b|step-up|leg press|leg curl|leg extension|calf|hip thrust|glute|bridge|abduct|adduct|knee raise|leg raise|carry|wall sit|sit-to-stand|march|walk|jump|hop|good morning|kickback(?!.*tri)/i;
+const NO_ARMS_OK = /leg press|leg curl|leg extension|leg ext|calf extension|abduct|adduct|glute bridge|wall sit|bodyweight squat|sit-to-stand|calf raise|heel raise|seated march|knee march|single-leg glute/i;
+const ARMS_NAME = /dumbbell|barbell|\bdb\b|goblet|kettlebell|cable|band|carry|farmer|suitcase|plank|push-?up|bird dog|smith|pull|chin|row|press|curl|crunch|captain|dip|fly|pec deck|pulldown|shrug|rotary|woodchop|pallof|russian twist|hang|weighted/i;
+const HELD = /dumbbell|barbell|\bdb\b|goblet|kettlebell|band|smith|weighted/i;
+export const needsLegs = c => LOWER.includes((c.focus || [])[0]) || LEGS_NAME.test(c.name || "");
+export const needsArms = c => {
+  const n = c.name || "", held = HELD.test(n) || ["dumbbell", "barbell", "band", "cable"].includes(c.equip);
+  if (NO_ARMS_OK.test(n) && !held) return false;
+  return UPPER.includes((c.focus || [])[0]) || held || ARMS_NAME.test(n);
+};
+// The muscles that take over, in turn: pulling first to balance pushing and protect the shoulders (Martin Ginis 2018).
+export const LIMB_SWAP = { noLegs: ["back", "shoulders", "chest", "arms", "core"], noArms: ["legs", "glutes", "calves"] };
+export const limbOk = (c, limits) => !(limits?.has?.("noLegs") && needsLegs(c)) && !(limits?.has?.("noArms") && needsArms(c));
+
 // Moves anyone can do sitting on a bench or chair, so a seated plan keeps them (the Workout tab says to sit).
 export const SEATABLE = /(dumbbell|db|hammer|bicep|concentration) curl|hammer curl|lateral raise|front raise|shrug|(dumbbell|overhead) tri(cep|ceps)? extension/i;
 const FREE = /dumbbell|barbell|\bdb\b|ez[- ]?bar|kettlebell|skull/i;
@@ -87,6 +104,8 @@ function cost(c, prof) {
   if (L.has("grip") && f.grip) { n += 10; why.push("grip"); }
   if (L.has("balance") && f.balance) { n += 10; why.push("balance"); }
   if (L.has("noSpineFlex") && f.spineFlex) { n += 20; why.push("noSpineFlex"); }
+  if (L.has("noLegs") && needsLegs(c)) { n += 100; why.push("noLegs"); }
+  if (L.has("noArms") && needsArms(c)) { n += 100; why.push("noArms"); }
   if (L.has("seated") && f.position && f.position !== "seated" && !SEATABLE.test(c.name)) { n += f.position === "lying" ? 8 : 20; why.push("seated"); }
   if (L.has("noSupine") && f.supine) { n += 20; why.push("noSupine"); }
   if (L.has("noEndRange") && f.endRange) { n += 12; why.push("noEndRange"); }
@@ -139,16 +158,17 @@ export function tailorPlan(prof, { lib = BUILTIN, exercises = Object.values(ALL_
   const wantsHarder = exp === "veteran" || (exp === "regular" && prof.intensity === "push");
   // Don't put the same exercise in a day twice ("Dumbbell Lateral Raise" and "Lateral Raise" count as the same).
   const key = n => String(n).toLowerCase().replace(/\b(dumbbell|db|machine|cable|smith|seated|standing|the)\b/g, "").replace(/[^a-z]+/g, " ").trim().replace(/s$/, "");
+  const turn = {};
   const dayNames = {}; for (const ex of exercises) (dayNames[`${ex.week}${ex.day}`] ||= new Set()).add(key(ex.n));
   for (const ex of exercises) {
     const taken = dayNames[`${ex.week}${ex.day}`] || new Set();
     const cands = [];
-    const add = (v, c, bias) => { if (c) cands.push({ v, c, bias }); };
+    const add = (v, c, bias) => { if (c) cands.push({ v, c: { focus: ex.focus, ...c }, bias }); };
     const std = safetyFor(ex, "std");
     const machine = FREE.test(ex.n) ? null : lib.find(b => b.id === (PLAN_MACHINES[ex.id] || [])[0]);
     add("std", { name: ex.n, text: `${ex.setup || ""} ${ex.how || ""}`, focus: ex.focus, pattern: patternOf(ex), ...(machine?.position ? { position: machine.position } : {}), ...(std || {}) }, 0);
-    if (ex.swap) add("swap", { name: ex.swap.n, text: ex.swap.how || "", ...(safetyFor(ex, "swap") || {}) }, 1);
-    if (ex.h) add("hard", { name: ex.h.n, text: ex.h.how || "", ...(safetyFor(ex, "hard") || {}) }, wantsHarder ? -2 : 4);
+    if (ex.swap) add("swap", { text: ex.swap.how || "", ...(safetyFor(ex, "swap") || {}), name: ex.swap.n }, 1);
+    if (ex.h) add("hard", { text: ex.h.how || "", ...(safetyFor(ex, "hard") || {}), name: ex.h.n }, wantsHarder ? -2 : 4);
     const same = new Set(PLAN_MACHINES[ex.id] || []);
     for (const b of lib) if (taken.has(key(b.name))) same.add(b.id);
     for (const b of libraryFor(ex, lib, patternOf(ex))) if (!same.has(b.id)) add(`lib:${b.id}`, b, 3);
@@ -161,6 +181,22 @@ export function tailorPlan(prof, { lib = BUILTIN, exercises = Object.values(ALL_
       const more = libraryFor(ex, lib, null).filter(b => !same.has(b.id) && !cands.some(c => c.v === `lib:${b.id}`)).map(b => ({ v: `lib:${b.id}`, c: b, bias: 5 }));
       scored = [...scored, ...score(more)];
       best = scored.slice().sort((a, b) => a.total - b.total)[0];
+    }
+    // A limb they can't use: a move for working muscles takes its place (different muscle, so look beyond libraryFor).
+    const limb = ["noLegs", "noArms"].find(w => best?.why.includes(w));
+    if (limb) {
+      const dk = `${ex.week}${ex.day}`; turn[dk] = turn[dk] || 0;
+      const L = new Set(prof.limits || []), order = LIMB_SWAP[limb];
+      const pool = lib.filter(b => (!b.home || b.equip === "bodyweight") && b.equip !== "cardio" && b.equip !== "band" && limbOk(b, L) && !taken.has(key(b.name)));
+      let pick = null;
+      for (let i = 0; i < order.length && !pick; i++) {
+        const want = order[(turn[dk] + i) % order.length];
+        pick = pool.filter(b => (b.focus || [])[0] === want).map(b => ({ b, n: cost(b, prof).n })).filter(x => x.n < 10).sort((a, z) => a.n - z.n || (a.b.home ? 1 : 0) - (z.b.home ? 1 : 0) || a.b.difficulty - z.b.difficulty || a.b.id.localeCompare(z.b.id))[0]?.b || null;
+      }
+      turn[dk]++;
+      // No quiet note on the card: the plan simply shows moves they can do. Nothing left that fits: the slot is dropped.
+      if (pick) { out[ex.id] = { v: `lib:${pick.id}`, why: "" }; taken.add(key(pick.name)); } else out[ex.id] = { v: "drop", why: "" };
+      continue;
     }
     if (!best || best.v === "std") continue;
     // Only switch away from the plan when it actually avoids a problem, or for experience (harder, no new problems).

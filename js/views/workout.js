@@ -1,5 +1,5 @@
 // The Workout tab: today's plan and logging in one place.
-import { DIFF, LD, LU, P, PROFILES, healthCard, noAutoUp, tailorFor, allGyms, currentGym, TODAY, VARIANT_NOTE, autoSel, baseDay, bonusPickFor, bonusPicker, cardioProgram, conflicts, cycleStart, dayName, dayStatus, dayTitle, daysFor, defOf, deloadActive, deloadOf, deloadSuggestion, editKey, esc, funAt, funHeader, getDraft, gymSet, isHome, libItem, listText, nextPlanDay, other, otherSlotOn, personToggle, planEditBox, reminders, ring, riskBlock, seg, sessionFor, slotDate, slotKey, srFor, state, store, supersetIdeas, todaysList, vLabel, variantOf, warmupCard, workoutBar, yt, ytStretch } from "../app.js";
+import { DIFF, LD, LU, P, PROFILES, cardioFit, healthCard, noAutoUp, tailorFor, allGyms, currentGym, TODAY, VARIANT_NOTE, autoSel, baseDay, bonusPickFor, bonusPicker, cardioProgram, conflicts, cycleStart, dayName, dayStatus, dayTitle, daysFor, defOf, deloadActive, deloadOf, deloadSuggestion, editKey, esc, funAt, funHeader, getDraft, gymSet, isHome, libItem, listText, nextPlanDay, other, otherSlotOn, personToggle, planEditBox, reminders, ring, riskBlock, seg, sessionFor, slotDate, slotKey, srFor, state, store, supersetIdeas, todaysList, vLabel, variantOf, warmupCard, workoutBar, yt, ytStretch } from "../app.js";
 import * as A from "../a11y.js";
 import * as PG from "../program.js";
 import * as S from "../stats.js";
@@ -191,7 +191,7 @@ function exerciseCard(u, date, ex, added, s, idx = 0, count = 0, cardOpts = {}) 
     ${head}<div class="ex-body" id="exb-${ex.id}">
     ${sore.high.length ? `<div class="pill hold">Hard on your ${esc(listText(sore.high.map(j => (JOINTS[j] || j).toLowerCase())))} today. Consider the Alternative or Library version.</div>` : sore.some.length ? `<div class="small warn-text">Some load on your ${esc(listText(sore.some.map(j => (JOINTS[j] || j).toLowerCase())))} today.</div>` : ""}
     ${opts.length > 1 ? seg("variant", String(v).startsWith("lib:") ? "lib" : v, opts, "Version") + `<p class="v-note small"><b>${esc(vLabel(v))}:</b> ${esc(VARIANT_NOTE[String(v).startsWith("lib:") ? "lib" : v] || "")}</p>` : ""}
-    ${(() => { const t = tailorFor(u, ex.id); return t && t.v === v ? `<p class="tailor-note small"><span aria-hidden="true">✨</span> Picked for you: ${esc(t.why)}.</p>` : ""; })()}
+    ${(() => { const t = tailorFor(u, ex.id); return t && t.v === v && t.why ? `<p class="tailor-note small"><span aria-hidden="true">✨</span> Picked for you: ${esc(t.why)}.</p>` : ""; })()}
     ${why ? `<div class="why">${esc(why)}</div>` : ""}
     ${lib ? `<div class="row"><a class="video" href="${yt(lib.name)}" target="_blank" rel="noopener">Watch form videos</a><button class="btn small" data-act="libSwap">Change machine</button></div>` : ""}
     ${lib?.tip ? `<div class="small muted"><b>Setup:</b> ${esc(lib.tip)}</div>` : ""}
@@ -269,7 +269,7 @@ function stepper(f, val, label, step, name = label) {
 
 // Cardio: its own save.
 function cardioCard(u, date, s) {
-  const { week, day } = state.sel; const cp = cardioProgram(u).plan(week, baseDay(u, week, day));
+  const { week, day } = state.sel; const fit = cardioFit(u), cp0 = cardioProgram(u).plan(week, baseDay(u, week, day)); const cp = fit ? { ...cp0, type: fit.type } : cp0;
   const ek = editKey(u, date, "cardio");
   const commute = s || !otherSlotOn(u, date) ? state.data.activities.find(a => a.id === `${u}-${date}-commute`) : null;
   if ((s?.cardio?.done || s?.cardio?.skipped) && !state.editing.has(ek)) {
@@ -279,7 +279,8 @@ function cardioCard(u, date, s) {
   }
   const c = store.get(`twp-c-${u}-${date}-${slotKey()}`, null) || { type: s?.cardio?.type || cp.type, minutes: s?.cardio?.minutes ?? 25, miles: s?.cardio?.miles ?? "", avgHr: s?.cardio?.avgHr ?? "", hiit: s?.cardio?.hiit ?? !!cp.hiit, commute: !!commute, commuteMiles: commute?.miles ?? PROFILES[u].commute.miles };
   const partner = state.partner ? cardioProgram(other(u)).plan(week, baseDay(other(u), week, day)) : null;
-  const machines = [cp.type, ...Object.keys(CARDIO_MACHINES).filter(m => m !== cp.type), ...cardioProgram(u).options.filter(o => !(o in CARDIO_MACHINES) && o !== cp.type)];
+  const machines = [cp.type, ...Object.keys(CARDIO_MACHINES).filter(m => m !== cp.type), ...cardioProgram(u).options.filter(o => !(o in CARDIO_MACHINES) && o !== cp.type)]
+    .filter(m => (!fit?.only || fit.only.includes(m)) && !(fit?.without || []).includes(m));
   const pick = machines.includes(c.type) ? c.type : cp.type;
   return `<section class="card cardio-card" id="cardio-form">
     <div class="between"><h3 class="h3">Cardio · ${esc(pick)}</h3>${cp.hiit ? `<span class="tag new">Intervals</span>` : ""}</div>

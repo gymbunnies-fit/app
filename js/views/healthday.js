@@ -27,13 +27,16 @@ export function dayLevel(u, date = TODAY()) {
   if (unsettled(u, date) && (!lvl || lvl === "good" || lvl === "soso")) return "low";
   return lvl;
 }
-// Most sets a move gets: 1 for the first two weeks when starting small, then 2 for gentle and paced plans.
-export function doseCap(u) {
+// Most sets a move gets today, from the guideline dose ([start, most] in js/conditions.js). The person moves up one set at
+// a time with "Ready for one more set", which the guidelines tie to the reps feeling easy, not to a date. A light day goes
+// back to the starting sets. ACSM's 2-4 sets is the ceiling when no guideline gives one.
+export function doseCap(u, lightDay = false) {
   const e = effOf(u); if (!e) return null;
-  const first = H.load(uid(), u)?.firstAt || Date.now();
-  if (e.startSmall && Date.now() - first < 14 * 864e5) return 1;
-  return e.maxSets;
+  if (lightDay) return e.sets ? e.sets[0] : 1;
+  if (!e.sets) return null;
+  return Math.min(e.sets[1] ?? 4, e.sets[0] + (H.log(uid(), u).more || 0));
 }
+const doseTop = e => (e.sets ? e.sets[1] ?? 4 : null);
 
 // ---------------------------------------------------------------- weekly minutes (150 a week for most guidelines)
 export function weekMinutes(u, today = TODAY()) {
@@ -45,7 +48,7 @@ export function weekMinutes(u, today = TODAY()) {
   }
   for (const a of state.data.activities) {
     if (a.user !== u || a.date < mon || a.date > today) continue;
-    if (a.type === "Bike commute") m += Math.round((+a.miles || 0) * 4); // about 15 mph
+    if (a.type === "Bike commute") m += Math.round((+a.miles || 0) * 6); // 10 mph, the top of "bicycling, to work" in the Compendium of Physical Activities
     else if (a.type !== "Stretch" && +a.minutes > 0) m += Math.round(+a.minutes);
   }
   return m;
@@ -70,7 +73,7 @@ export function healthCard(u, date) {
     e.seated ? "Curls, raises and dumbbell presses can all be done sitting on a bench or chair." : "",
     ...C.supportTips(e)
   ].filter(Boolean);
-  const cap = doseCap(u);
+  const cap = doseCap(u), top = doseTop(e);
   const last = lastWorkout(u, date), settleQ = last && !L.settle[last];
   const parts = [];
   // 1. Did it settle?
@@ -79,14 +82,16 @@ export function healthCard(u, date) {
   else if (unsettled(u, date)) parts.push(`<p class="small">Last workout's symptoms hadn't settled, so today starts as a light day.</p>`);
   // 2. Energy
   parts.push(lvl ? (said ? `<p>${esc(said)}</p>` : "") + (lvl !== "good" ? `<p class="small muted">Exercises you haven't started yet are set up for today.</p>` : "") + (lvl === "flare" ? `<p class="small muted">Today counts as a rest day in your streak.</p><button class="btn small" data-act="goView" data-v="stretch">Gentle stretching instead</button>` : "") : ask);
-  if (cap) parts.push(`<p class="small muted">${cap === 1 ? "Starting small: 1 set of each move for your first two weeks." : "Up to 2 sets of each move, as your guidelines suggest."}</p>`);
+  if (cap) parts.push(`<div class="hf-dose"><p class="small">${cap} set${cap === 1 ? "" : "s"} of each move for now${top && top !== cap ? `; your guidelines go up to ${top}` : ""}. Add a set once the reps feel easy.</p>${top && cap < top ? `<button type="button" class="btn small" data-act="hDayMore">Ready for one more set</button>` : ""}${(H.log(uid(), u).more || 0) > 0 ? `<button type="button" class="btn small" data-act="hDayLess">One set less</button>` : ""}</div>`);
   // 3. Weekly minutes
   if (e.minutes) { const m = weekMinutes(u, date); parts.push(`<div class="hf-week">${minutesRing(m, e.minutes)}<div><b>${m} of ${e.minutes} minutes</b><div class="small muted">active this week: workouts, cardio and activities${m >= e.minutes ? ". Goal met." : "."}</div></div></div>`); }
   // 4. Balance practice
   if (e.balance) {
     const lv = Math.max(0, Math.min(C.BALANCE_LEVELS.length - 1, L.bal || 0)), [bn, bt] = C.BALANCE_LEVELS[lv], done = !!L.balDays[date];
+    const mon = S.mondayOf(date), wk = Object.keys(L.balDays).filter(d => d >= mon && d <= date).length;
     parts.push(`<section class="hf-block" aria-labelledby="hf-bal-t"><h3 class="h3" id="hf-bal-t">Balance practice <span class="small muted">step ${lv + 1} of ${C.BALANCE_LEVELS.length}: ${esc(bn)}</span></h3>
-      <p class="small">${esc(bt)} A few minutes, most days.</p>
+      <p class="small">${esc(bt)} Move to the next step when you can hold it steady.</p>
+      <p class="small muted">${wk} of ${C.BALANCE_PER_WEEK} times this week.</p>
       <div class="row"><button type="button" class="btn small ${done ? "" : "primary"}" data-act="hDayBal" data-v="done" aria-pressed="${done}">${done ? "Done today ✓" : "Done today"}</button>
       ${lv > 0 ? `<button type="button" class="btn small" data-act="hDayBal" data-v="down">Easier step</button>` : ""}${lv < C.BALANCE_LEVELS.length - 1 ? `<button type="button" class="btn small" data-act="hDayBal" data-v="up">Next step</button>` : ""}</div></section>`);
   }
@@ -94,7 +99,7 @@ export function healthCard(u, date) {
   if (e.supports.has("stretch")) {
     const done = !!L.stretch[date] || state.data.activities.some(a => a.user === u && a.date === date && a.type === "Stretch");
     parts.push(`<section class="hf-block" aria-labelledby="hf-str-t"><h3 class="h3" id="hf-str-t">Daily stretch</h3>
-      ${done ? `<p class="small">Done today ✓</p>` : `<p class="small">5–10 minutes of gentle stretching helps stiff muscles.</p><div class="row"><button type="button" class="btn small primary" data-act="goView" data-v="stretch">Stretch now</button><button type="button" class="btn small" data-act="hDayStretch">I already stretched</button></div>`}</section>`);
+      ${done ? `<p class="small">Done today ✓</p>` : `<p class="small">Hold each stretch 10–30 seconds (30–60 if you're older), to about a minute per muscle in all. Daily works best.</p><div class="row"><button type="button" class="btn small primary" data-act="goView" data-v="stretch">Stretch now</button><button type="button" class="btn small" data-act="hDayStretch">I already stretched</button></div>`}</section>`);
   }
   if (tips.length) parts.push(`<ul class="small hf-tips">${tips.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`);
   if (e.stop.length) parts.push(`<details class="more hf-stop"><summary>Stop and get help if…</summary><ul class="small">${e.stop.map(x => `<li>${esc(x)}</li>`).join("")}</ul></details>`);
@@ -118,7 +123,8 @@ export function shareHtml(u) {
     ${list("Before I start", e.clearance)}
     <h3 class="h3">How the plan works</h3><ul>
       <li>${esc(C.PROGRESSION[e.progression || "build"])}</li>
-      ${e.maxSets ? `<li>Up to ${e.maxSets} sets of each move${e.startSmall ? ", and 1 set for the first two weeks" : ""}.</li>` : e.startSmall ? "<li>1 set of each move for the first two weeks.</li>" : ""}
+      ${e.sets ? `<li>Sets: start with ${e.sets[0]} of each move${doseTop(e) !== e.sets[0] ? ` and build to ${doseTop(e)} as the reps get easy` : ""}${e.setsFrom.length ? ` (${esc(e.setsFrom.join(", "))} guidelines)` : " (ACSM)"}.</li>` : ""}
+      ${e.limits.has("noLegs") ? "<li>No leg exercises: upper-body and core moves take their place.</li>" : ""}${e.limits.has("noArms") ? "<li>No arm exercises: leg and hip moves take their place.</li>" : ""}
       <li>Flare-ups: ${esc(C.FLARE[e.flare || "pause"])}</li>
       ${e.minutes ? `<li>Weekly goal: ${e.minutes} active minutes.</li>` : ""}
       ${e.limits.size ? `<li>Exercises are swapped for safer versions where needed.</li>` : ""}
@@ -126,7 +132,7 @@ export function shareHtml(u) {
     ${list("The plan", e.plan)}
     ${list("Tips", [...e.tips, ...C.supportTips(e)])}
     ${list("Stop and get help if", e.stop)}
-    <h3 class="h3">Sources</h3><ul class="small">${[...new Map(e.conditions.flatMap(c => c.sources).map(s => [s.url, s])).values()].map(s => `<li>${esc(s.t)}: ${esc(s.url)}</li>`).join("")}</ul>
+    <h3 class="h3">Sources</h3><ul class="small">${[...new Map([...e.conditions.flatMap(c => c.sources), ...C.GENERAL_SOURCES].map(s => [s.url, s])).values()].map(s => `<li>${esc(s.t)}: ${esc(s.url)}</li>`).join("")}</ul>
   </div>`;
 }
 export function openHealthShare() {
@@ -153,6 +159,8 @@ export function onHealthDayClick(act, el) {
       if (v === "down") l.bal = Math.max(0, (l.bal || 0) - 1);
     }); render(); break;
     case "hDayStretch": H.setLog(id, u, l => { l.stretch[today] = 1; }); render(); break;
+    case "hDayMore": H.setLog(id, u, l => { l.more = (l.more || 0) + 1; }); toast("One more set from now on. Exercises you haven't started are updated."); render(); break;
+    case "hDayLess": H.setLog(id, u, l => { l.more = Math.max(0, (l.more || 0) - 1); }); render(); break;
     case "hDayShare": openHealthShare(); break;
     case "hDayPrint": window.print(); break;
     default: return false;

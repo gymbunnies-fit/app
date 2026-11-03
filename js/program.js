@@ -4,7 +4,7 @@
 // Pure: no DOM, no storage. Plans are recomputed from the profile, so retaking the questionnaire updates them.
 import { PLAN, DAYS } from "./plan.js";
 import { BUILTIN } from "./library.js";
-import { fitCost, patternOf, muscleOf } from "./tailor.js";
+import { fitCost, patternOf, muscleOf, LOWER, UPPER, LIMB_SWAP } from "./tailor.js";
 import { ALL_EX } from "./plan.js";
 
 export const STYLES = {
@@ -96,9 +96,12 @@ const FAMILY = { squat: ["squat", "lunge"], lunge: ["lunge", "squat"], hinge: ["
 // The home version of a gym day: each exercise swapped for the best home move that works the same muscles
 // (same main muscle, same kind of movement when possible). Keeps the day's focus; same length or close.
 export function homeVersion(prof, exList, lib = BUILTIN) {
-  const pool = homeScored(prof, lib), used = new Set(), out = [];
+  const pool = homeScored(prof, lib), used = new Set(), out = []; let turn = 0;
   for (const ex of exList) {
-    const focus = (ex.lib?.focus || ex.focus || [])[0]; if (!focus) continue;
+    let focus = (ex.lib?.focus || ex.focus || [])[0]; if (!focus) continue;
+    // A limb they can't use: the slot goes to muscles they can use, in turn (see LIMB_SWAP in tailor.js).
+    const limb = (prof.limits || []).includes("noLegs") && LOWER.includes(focus) ? "noLegs" : (prof.limits || []).includes("noArms") && (UPPER.includes(focus) || focus === "core") ? "noArms" : null;
+    if (limb) focus = LIMB_SWAP[limb][turn++ % LIMB_SWAP[limb].length];
     const pat = ex.lib?.pattern || (ALL_EX[ex.id] ? patternOf(ALL_EX[ex.id]) : null);
     const fam = FAMILY[pat] || null;
     const mus = muscleOf(ex.n || ex.lib?.name || "");
@@ -122,7 +125,9 @@ export const BONUS_FOCUS = {
 const RELATED = { arms: ["chest", "back"], shoulders: ["chest", "back"], chest: ["shoulders"], back: ["shoulders"], calves: ["legs"] };
 // A bonus workout for the chosen focus, at the gym (plan exercises) or at home (their home gear).
 export function buildBonus(prof, focus, where, week = "A", lib = BUILTIN) {
-  const [title, areas] = BONUS_FOCUS[focus] || BONUS_FOCUS.full;
+  const [title, all] = BONUS_FOCUS[focus] || BONUS_FOCUS.full;
+  const lim = prof.limits || [];
+  const areas = all.filter(a => !(lim.includes("noLegs") && LOWER.includes(a)) && !(lim.includes("noArms") && UPPER.includes(a)));
   const n = Math.max(3, Math.min(cap(prof), 6));
   const out = [];
   if (where === "home") {

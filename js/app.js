@@ -35,7 +35,7 @@ import { focusSaved, openKey, stretchBox, viewToday } from "./views/workout.js";
 
 // ---------------------------------------------------------------- helpers
 // Shown at the bottom of Settings so you can tell whether a phone has the latest update. Bump with sw.js VERSION.
-const APP_VERSION = "67";
+const APP_VERSION = "68";
 // The app's name lives here only (plus app-v41.webmanifest and the <title> tags in index.html, which can't read JS).
 const APP_NAME = "GymBunnies.fit";
 const $ = (s, r = document) => r.querySelector(s);
@@ -186,10 +186,24 @@ function bonusPickFor(u, week) {
   const s = sessionFor(u, BASE_DATE(), { week, day: "Bonus" });
   return { u, focus: s?.bonusFocus || "full", where: s?.bonusWhere || "gym" };
 }
+// Cardio machines that fit the person's body, and the one to recommend (null = the plan's usual pick).
+function cardioFit(u) {
+  const e = hEff(u); if (!e) return null;
+  const L = new Set(planProf(u).limits || []);
+  if (L.has("noLegs")) return { type: "Arm bike", only: ["Arm bike", "Other"] };
+  if (L.has("noArms")) return { type: "Recumbent bike", without: ["Rowing machine", "Arm bike"] };
+  if (e.seated) return { type: "Recumbent bike" };
+  return null;
+}
+// Bonus focus choices someone can use: no leg-only choices when they can't use their legs (and the same for arms).
+function bonusAreaOk(u, areas) {
+  const L = new Set(planProf(u).limits || []);
+  return areas.some(a => !(L.has("noLegs") && TL.LOWER.includes(a)) && !(L.has("noArms") && TL.UPPER.includes(a)));
+}
 function bonusPicker(u) {
   const d = state.bonusDraft || { focus: "full", where: "gym" };
   return `<section class="card bonus-picker" id="bonus-picker" aria-labelledby="bp-h"><h3 class="h3" id="bp-h" tabindex="-1">Where do you want to focus?</h3>
-    <div class="focus-chips ob-chips" role="group" aria-labelledby="bp-h">${Object.entries(PG.BONUS_FOCUS).map(([k, [l]]) => `<button type="button" data-act="bonusSet" data-k="focus" data-v="${k}" aria-pressed="${d.focus === k}">${esc(l)}</button>`).join("")}</div>
+    <div class="focus-chips ob-chips" role="group" aria-labelledby="bp-h">${Object.entries(PG.BONUS_FOCUS).filter(([, [, areas]]) => bonusAreaOk(u, areas)).map(([k, [l]]) => `<button type="button" data-act="bonusSet" data-k="focus" data-v="${k}" aria-pressed="${d.focus === k}">${esc(l)}</button>`).join("")}</div>
     <div class="field"><span id="bp-w">Where are you working out?</span><div class="seg" role="group" aria-labelledby="bp-w">${[["gym", "At the gym"], ["home", "At home"]].map(([k, l]) => `<button type="button" data-act="bonusSet" data-k="where" data-v="${k}" aria-pressed="${d.where === k}">${l}</button>`).join("")}</div></div>
     <button class="btn primary block" data-act="bonusGo">Build my bonus workout</button></section>`;
 }
@@ -281,7 +295,8 @@ function dayStatus(u, week, day) {
   const doneCount = daysFor(u, week).filter(d => d !== day && state.data.sessions.some(x => x.user === u && x.week === week && x.day === d && x.date >= cyc.start && x.date <= cyc.end && ((x.exercises || []).some(e => e.sets?.length) || x.markedDone))).length;
   return { state: doneCount >= Math.min(daysFor(u, week).length, paceOf(u)) ? "skipped" : "missed" };
 }
-const variantOf = (u, ex) => repeatedV(u, ex) || state.variants[`${u}:${ex.id}`] || tailoredV(u, ex) || (P(u).defaultVariant === "hard" && ex.h ? "hard" : "std");
+// "Always the harder version" doesn't apply on top of health limits kept on this phone: the plan builder decides there.
+const variantOf = (u, ex) => repeatedV(u, ex) || state.variants[`${u}:${ex.id}`] || tailoredV(u, ex) || (P(u).defaultVariant === "hard" && ex.h && !hEff(u)?.limits.size ? "hard" : "std");
 // The same version or machine picked the last two times this exercise was logged: open on it.
 function repeatedV(u, ex) {
   if (ex.custom) return null;
@@ -421,15 +436,10 @@ const editKey = (u, date, id) => `${u}|${date}|${slotKey()}|${id}`;
 function prefillSets(u, def, id, v, date = LD()) {
   const dl = deloadActive(u, date) ? x => ({ ...x, sets: lightSets(x.sets, def.db) }) : x => x;
   // Energy check (this phone only): fewer sets and lighter weights on so-so, low and flare-up days.
-  // Energy check and "did it settle?" (this phone only): fewer sets and lighter weights on so-so, low and flare-up days.
-  const lvl = dayLevel(u, date); const E = lvl && C.ENERGY[lvl === "flare" && hEff(u)?.flare === "cutback" ? "low" : lvl];
-  const cap = doseCap(u); // guideline dose: at most 2 sets (gentle and paced plans), 1 while starting small
-  const light = x => {
-    let y = dl(x);
-    if (E && E.sets) { const n = Math.max(1, y.sets.length + E.sets); y = { ...y, sets: y.sets.slice(0, n).map(s => ({ ...s, w: E.weight < 1 ? roundTo((+s.w || 0) * E.weight, def.db ? 2.5 : 5) : s.w })) }; }
-    if (cap && y.sets.length > cap) y = { ...y, sets: y.sets.slice(0, cap) };
-    return y;
-  };
+  // Energy check and "did it settle?" (this phone only). Sets follow the person's guideline dose; a light day goes back to
+  // the guideline's starting sets. Weights are never scaled by a made-up percentage: the card says to choose them by feel.
+  const lvl = dayLevel(u, date); const cap = doseCap(u, !!(lvl && C.ENERGY[lvl]?.light));
+  const light = x => { const y = dl(x); return cap && y.sets.length > cap ? { ...y, sets: y.sets.slice(0, cap) } : y; };
   const skip = hEff(u) ? H.lightDays(state.auth.user.uid, u) : null;
   const last = S.lastTime(state.data.sessions.filter(s => (!deloadActive(u, s.date) && !skip?.has(s.date)) || s.date === date), u, id, v);
   const { sets, min, max } = S.parseRange(def.sr || "3 × 10");
@@ -484,7 +494,7 @@ function todaysList(u, date) {
   const edits = dayEdits(u, week, day);
   let base = planDay(u, week, day).ex;
   if (day !== "Bonus" && isHome(u, date)) base = PG.homeVersion(planProf(u), base).map(id => resolveEx(id, {})).filter(Boolean);
-  const list = base.filter(ex => !edits.remove.includes(ex.id)).map(ex => ({ ex, added: false }));
+  const list = base.filter(ex => !edits.remove.includes(ex.id) && tailorFor(u, ex.id)?.v !== "drop").map(ex => ({ ex, added: false }));
   for (const id of edits.add) { const ex = resolveEx(id, {}); if (ex && !ex.custom) list.push({ ex, added: false, planned: true }); }
   if (edits.order?.length) list.sort((a, b) => { const ia = edits.order.indexOf(a.ex.id), ib = edits.order.indexOf(b.ex.id); return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib); });
   const ids = new Set(list.map(x => x.ex.id));
@@ -629,7 +639,9 @@ function defOf(ex, v) {
   if (ex.custom) return { name: ex.n, sr: ex.sr, kind: ex.kind, db: ex.db, focus: ex.focus?.length ? ex.focus : undefined };
   if (String(v).startsWith("lib:")) {
     const m = libItem(v.slice(4));
-    return { name: m?.name || "Library exercise", sr: ex.sr, kind: m?.kind || ex.kind, db: !!m?.db, q: m?.name || ex.q, focus: m?.focus };
+    // A move for a different main muscle (a limb someone can't use) keeps its own sets and reps, not the old move's.
+    const own = m?.sr && (m.focus || [])[0] && (m.focus || [])[0] !== (ex.focus || [])[0];
+    return { name: m?.name || "Library exercise", sr: own ? m.sr : ex.sr, kind: m?.kind || ex.kind, db: !!m?.db, q: m?.name || ex.q, focus: m?.focus };
   }
   return variantDef(ex, v);
 }
@@ -988,6 +1000,16 @@ const WARMUPS = {
   Wed: ["Bodyweight squats to a bench, 10", "Glute bridges on the floor, 12", "Leg swings, 10 each leg (hold something)", "Bodyweight reverse lunges, 6 each leg"],
   Thu: ["Standing knee hugs, 8 each leg", "Bodyweight squats to a bench, 10", "Standing side bends, 10 each side", "Dead bug, 5 each side"]
 };
+// Warm-up lines that fit the person: seated, upper-body-only or lower-body-only when their health answers say so.
+const WARMUP_SEATED = ["Arm circles, 10 each direction", "Shoulder rolls, 10", "Band pull-aparts, 15", "Seated torso turns, 5 each side", "Seated marches, 30 seconds"];
+const WARMUP_NO_ARMS = ["Seated marches, 30 seconds", "Seated knee lifts, 10 each leg", "Ankle circles, 10 each direction", "Sit-to-stands from a chair, 8"];
+function warmupLines(u) {
+  const e = hEff(u), L = e ? new Set(planProf(u).limits || []) : new Set();
+  const noLegs = L.has("noLegs"), noArms = L.has("noArms");
+  const first = `<b>5 minutes easy</b> ${noLegs ? "on an arm bike, or arm circles and punches in your chair" : noArms ? "on a recumbent bike, or marching in place" : e?.seated ? "on a recumbent bike or arm bike" : "on the bike or elliptical"}, until you're slightly warm.`;
+  const list = noArms ? WARMUP_NO_ARMS : noLegs ? WARMUP_SEATED.filter(x => !/march/i.test(x)) : e?.seated ? WARMUP_SEATED : (WARMUPS[baseDay(u, state.sel.week, state.sel.day)] || WARMUPS.Mon);
+  return [first, ...list.map(esc)];
+}
 function warmupCard(u, date, s, list) {
   if (s?.warmup && !state.editing.has(editKey(u, date, "warmup"))) return `<section class="card done-card"><div class="head"><h3 class="name"><span class="tick" aria-hidden="true">✓</span><span class="visually-hidden">Done: </span>Warm-up</h3><button class="btn small" data-act="undoWarmup">Undo</button></div></section>`;
   const first = list.find(x => (x.ex.kind === "load") && !s?.exercises?.some(e => e.id === x.ex.id));
@@ -998,7 +1020,7 @@ function warmupCard(u, date, s, list) {
     if (top > 0) ramp = `<li><b>Ramp-up sets for ${esc(def.name)}:</b> 10 reps at about ${roundTo(top * .5, def.db ? 2.5 : 5)} lb${def.db ? " each" : ""}, then 5 reps at about ${roundTo(top * .75, def.db ? 2.5 : 5)} lb${def.db ? " each" : ""}.</li>`;
   }
   return `<section class="card"><details class="more" ${s?.warmup ? "" : "open"}><summary>Warm-up · 8 minutes</summary><div class="panel">
-    <ul class="warmup small"><li><b>5 minutes easy</b> on the bike or elliptical, until you're slightly warm.</li>${(WARMUPS[baseDay(LU(), state.sel.week, state.sel.day)] || WARMUPS.Mon).map(m => `<li>${esc(m)}</li>`).join("")}${ramp}</ul>
+    <ul class="warmup small">${warmupLines(u).map(m => `<li>${m}</li>`).join("")}${ramp}</ul>
     <button class="btn primary block" data-act="warmupDone">Warm-up done</button></div></details></section>`;
 }
 
@@ -1205,7 +1227,7 @@ const a11yOn = () => { const a = A.get(); return Object.keys(A.DEFAULTS).filter(
 function openTimer(exId) {
   const ex = ALL_EX[exId] || resolveEx(exId, {});
   state.overlay = "timer";
-  state.timer = { ex, total: store.get("twp-rest", hEff(LU()) ? 120 : 90) };
+  state.timer = { ex, total: store.get("twp-rest", hEff(LU()) ? 120 : 90) }; // health: 2 min, the low end of ACSM's 2-3 min between sets (Garber 2011)
   drawTimer();
 }
 function drawTimer() {
@@ -2085,4 +2107,4 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 try { const from = sessionStorage.getItem("twp-updated-from"); if (from) { sessionStorage.removeItem("twp-updated-from"); setTimeout(() => toast(from === APP_VERSION ? `Up to date: version ${APP_VERSION}.` : `Updated to version ${APP_VERSION}.`), 800); } } catch { /* ignore */ }
 
 // Shared with the screens in js/views/.
-export { $, APP_VERSION, avatarGrid, hEff, hEnergy, healthCard, noAutoUp, tailorFor, logAfter, allGyms, crewGyms, currentGym, gymById, newGymId, saveMyGyms, updateGym, AVATARS, DIFF, FUN_LEVELS, GROUPS, LD, LU, P, PROFILES, PROFILE_DEFAULTS, THEMES, TODAY, VARIANT_NOTE, a11yOn, aches, autoSel, avatarHtml, baseDay, bonusDates, bonusPickFor, bonusPicker, canSee, cardioProgram, closeOverlay, conflicts, crewCard, crewSettings, cyclePlan, cycleStart, dayEdits, dayName, dayStatus, dayTitle, daysFor, defOf, deloadActive, deloadOf, deloadSuggestion, editKey, esc, funAt, funHeader, getDraft, gymSet, isHome, libItem, listText, nextPlanDay, other, otherSlotOn, paceOf, personToggle, planDay, planEditBox, profileIds, reminders, render, resolveEx, ring, riskBlock, saveProfile, seg, sessionFor, shareOf, slotDate, slotKey, slug, srFor, state, stopAll, store, supersetIdeas, toast, todaysList, vLabel, variantOf, warmupCard, workoutBar, yt, ytStretch };
+export { $, APP_VERSION, avatarGrid, cardioFit, hEff, hEnergy, healthCard, noAutoUp, tailorFor, logAfter, allGyms, crewGyms, currentGym, gymById, newGymId, saveMyGyms, updateGym, AVATARS, DIFF, FUN_LEVELS, GROUPS, LD, LU, P, PROFILES, PROFILE_DEFAULTS, THEMES, TODAY, VARIANT_NOTE, a11yOn, aches, autoSel, avatarHtml, baseDay, bonusDates, bonusPickFor, bonusPicker, canSee, cardioProgram, closeOverlay, conflicts, crewCard, crewSettings, cyclePlan, cycleStart, dayEdits, dayName, dayStatus, dayTitle, daysFor, defOf, deloadActive, deloadOf, deloadSuggestion, editKey, esc, funAt, funHeader, getDraft, gymSet, isHome, libItem, listText, nextPlanDay, other, otherSlotOn, paceOf, personToggle, planDay, planEditBox, profileIds, reminders, render, resolveEx, ring, riskBlock, saveProfile, seg, sessionFor, shareOf, slotDate, slotKey, slug, srFor, state, stopAll, store, supersetIdeas, toast, todaysList, vLabel, variantOf, warmupCard, workoutBar, yt, ytStretch };

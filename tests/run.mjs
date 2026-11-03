@@ -543,7 +543,22 @@ for (const b of BUILTIN) {
   eq("spinal cord injury: weekly goal follows the SCI guideline (40 min)", fx(["sci"]).minutes, 40);
   yes("high SCI adds a stop sign and a clearance note", fx(["sci"], { "sci.high": "yes" }).stop.length === 1 && fx(["sci"], { "sci.high": "yes" }).clearance.length === 1);
   yes("POTS, dizzy upright: seated or lying cardio", fx(["pots"], { "pots.upright": "yes" }).seated);
-  eq("POTS: up to 2 sets a move", fx(["pots"]).maxSets, 2);
+  eq("POTS: 3 sets, as in the CHOP program", fx(["pots"]).sets?.join("-"), "3-3");
+  eq("heart disease: 1 set, as the AHA advises", fx(["heart"]).sets?.join("-"), "1-1");
+  eq("cancer: 2 sets (ACSM 2019)", fx(["cancer"]).sets?.join("-"), "2-2");
+  eq("MS: start with 1 set, build to 3 (Kim 2019)", fx(["ms"]).sets?.join("-"), "1-3");
+  eq("kidney disease: 1-2 sets (EIM)", fx(["ckd"]).sets?.join("-"), "1-2");
+  eq("two conditions: the smaller dose wins", fx(["sci", "heart"]).sets?.join("-"), "1-1");
+  eq("conditions with no set number leave the plan alone", fx(["lupus"]).sets, null);
+  eq("starting small with no condition number: ACSM's single set", fx(["mood"], { "mood.start": "yes" }).sets?.join("-"), "1-");
+  yes("no condition carries an invented set cap", !("maxSets" in fx(["pots"])));
+  yes("the energy check never scales weights by a made-up percentage", Object.values(C.ENERGY).every(x => !("weight" in x) && !("sets" in x)));
+  yes("balance steps follow STEADI and Otago (10-second holds)", C.BALANCE_LEVELS.length === 5 && C.BALANCE_LEVELS.slice(0, 4).every(([, t]) => /10 seconds/.test(t)) && C.BALANCE_PER_WEEK === 3);
+  yes("no tip uses our old made-up numbers", !C.CONDITIONS.some(c => [...c.tips, ...c.plan, ...c.followUps.flatMap(f => Object.values(f.effects).map(e => e.tip || ""))].some(t => /180\/110|about 30 minutes|3 to 5 minutes|Ten minutes|10–15 minutes\), build|about 20 minutes|5–10 minutes each/.test(t))));
+  yes("every set dose has a source on its condition", C.CONDITIONS.filter(c => c.sets).every(c => c.sources.length >= 1));
+  yes("legs answer No: no leg moves, seated plan", fx([], {}, { fn: { legs: "no" } }).limits.has("noLegs") && fx([], {}, { fn: { legs: "no" } }).seated);
+  yes("SCI, can't move legs: no leg moves (no Skip button)", fx(["sci"], { "sci.legs": "no" }).limits.has("noLegs") && !fx(["sci"], { "sci.legs": "no" }).tips.some(t => /skip/i.test(t)));
+  yes("arms answer No: no arm moves", fx([], {}, { fn: { arms: "no" } }).limits.has("noArms"));
   yes("ME/CFS: no weekly goal to chase", fx(["mecfs"]).minutes === null);
   eq("the smallest weekly goal wins", fx(["htn", "cancer"]).minutes, 90);
   eq("most people: 150 minutes a week", fx(["htn"]).minutes, 150);
@@ -574,6 +589,24 @@ for (const b of BUILTIN) {
   const { BUILTIN: BIh } = await import(join(here, "../js/library.js"));
   const home = PGh.homeVersion({ limits: ["seated", "noFloor"], injuries: [], homeGear: ["band"] }, Object.values(AXh).filter(e => e.week === "A" && e.day === "Mon").map(e => ({ id: e.id, n: e.n, focus: e.focus })));
   yes("seated home workout uses only seated moves", home.length >= 3 && home.every(id => BIh.find(b => `lib-${b.id}` === id)?.position === "seated"));
+  // limbs someone can't use: those moves are replaced, never shown
+  const allEx = Object.values(AXh), libBy = id => BIh.find(b => b.id === id);
+  const shown = (t, e) => { const v = t[e.id]?.v || "std"; if (v === "drop") return null; return v.startsWith("lib:") ? libBy(v.slice(4)) : { name: v === "swap" ? e.swap.n : v === "hard" ? e.h.n : e.n, focus: e.focus }; };
+  for (const lim of [["noLegs", "seated", "noFloor"], ["noArms"]]) {
+    const t = TLh.tailorPlan({ limits: lim, injuries: [] }), L = new Set(lim);
+    const bad = allEx.map(e => [e, shown(t, e)]).filter(([, x]) => x && !TLh.limbOk(x, L)).map(([e]) => e.n);
+    eq(`${lim[0]}: no plan exercise needs that limb`, bad.join(", "), "");
+    yes(`${lim[0]}: replacements carry no "skip" or "can't" note`, Object.values(t).every(x => !/skip|can't|cannot|without/i.test(x.why)));
+  }
+  const tL = TLh.tailorPlan({ limits: ["noLegs", "seated"], injuries: [] });
+  yes("no legs: a leg press slot becomes an upper-body move", TLh.UPPER.concat("core").includes(libBy(tL["b-wed-lp"]?.v?.slice(4) || "")?.focus?.[0]) || Object.entries(tL).some(([id, x]) => /Leg Press/.test(AXh[id].n) && x.v.startsWith("lib:")));
+  yes("no legs: pulling comes first (Martin Ginis 2018)", TLh.LIMB_SWAP.noLegs[0] === "back");
+  const wedA = allEx.filter(e => e.week === "A" && e.day === "Wed").map(e => ({ id: e.id, n: e.n, focus: e.focus }));
+  const homeNoLegs = PGh.homeVersion({ limits: ["noLegs", "seated", "noFloor"], injuries: [], homeGear: ["band"] }, wedA);
+  yes("no legs at home: leg day still has a full set of moves, none for legs", homeNoLegs.length >= 4 && homeNoLegs.every(id => TLh.limbOk(libBy(id.slice(4)), new Set(["noLegs"]))));
+  eq("no legs: a lower-body bonus has nothing to offer (the picker hides it)", PGh.buildBonus({ limits: ["noLegs"], injuries: [], homeGear: ["band"] }, "lower", "home").ex.length, 0);
+  yes("no legs: a full-body bonus is all upper body and core", PGh.buildBonus({ limits: ["noLegs", "seated"], injuries: [], homeGear: ["band"] }, "full", "home").ex.every(id => TLh.limbOk(libBy(id.slice(4)), new Set(["noLegs"]))));
+  yes("people without health answers get the same plan as before", Object.keys(TLh.tailorPlan({ limits: [], injuries: [] })).length === 0);
   // on-device storage
   const mem = {}; globalThis.localStorage = { getItem: k => (k in mem ? mem[k] : null), setItem: (k, v) => { mem[k] = String(v); }, removeItem: k => { delete mem[k]; }, key: i => Object.keys(mem)[i], get length() { return Object.keys(mem).length; } };
   Object.defineProperty(globalThis.localStorage, "keys", { value: () => Object.keys(mem) });

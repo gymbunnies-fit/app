@@ -34,6 +34,8 @@ export function healthFormHtml(d) {
     </section>`).join("")}
     <section class="card"><h3 class="h3">What you can do right now</h3>
       <div class="field"><span>What do you use to get around?</span>${seg("fn.aid", d.fn.aid || "", [["none", "Nothing"], ["cane", "A cane"], ["walker", "A walker"], ["wheelchair", "A wheelchair"]], "What do you use to get around?")}</div>
+      <div class="field"><span>Can you use your legs for exercise?</span>${seg("fn.legs", d.fn.legs || "", [["yes", "Yes"], ["some", "Partly"], ["no", "No"]], "Can you use your legs for exercise?")}</div>
+      <div class="field"><span>Can you use your arms and hands for exercise?</span>${seg("fn.arms", d.fn.arms || "", [["yes", "Both"], ["one", "One side"], ["no", "No"]], "Can you use your arms and hands for exercise?")}</div>
       <div class="field"><span>Can you get down to the floor and back up?</span>${seg("fn.floor", d.fn.floor || "", [["yes", "Yes"], ["no", "Not easily"]], "Can you get down to the floor and back up?")}</div>
       <div class="field"><span>Does activity make you feel much worse a day or two later, beyond normal soreness?</span>${seg("fn.pem", d.fn.pem || "", [["yes", "Yes"], ["no", "No"], ["unsure", "Not sure"]], "Does activity make you worse a day or two later?")}</div>
     </section>
@@ -51,7 +53,9 @@ export function summary(eff) {
   if (eff.supports.has("sun")) bits.push("a reminder to train out of the sun");
   if (eff.limits.size) bits.push("safer versions of some exercises");
   if (eff.seated) bits.push("seated versions of exercises where they exist");
-  if (eff.maxSets) bits.push(`up to ${eff.maxSets} sets of each move`);
+  if (eff.sets) bits.push(`${eff.sets[0]} set${eff.sets[0] === 1 ? "" : "s"} of each move to start, as your guidelines say`);
+  if (eff.limits.has("noLegs")) bits.push("upper-body moves in place of leg moves");
+  if (eff.limits.has("noArms")) bits.push("leg and hip moves in place of arm moves");
   if (eff.balance) bits.push("a short balance practice");
   if (eff.supports.has("stretch")) bits.push("a daily stretch reminder");
   if (eff.minutes) bits.push(`a weekly goal of ${eff.minutes} active minutes`);

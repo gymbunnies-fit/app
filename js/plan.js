@@ -277,6 +277,7 @@ export const CARDIO = {
 
 // Every cardio machine you can pick instead of the recommended one, with how to do the same work on it.
 export const CARDIO_MACHINES = {
+  "Arm bike": "An arm bike (upper-body ergometer): crank with your arms, seated. Easy = light resistance, steady cranking. Hard = more resistance or faster.",
   "Bike": "Upright bike. Easy = light resistance, steady pedaling. Hard = turn the resistance up and pedal faster.",
   "Recumbent bike": "The seated bike with a backrest: easiest on the back, knees, and feet. Hard = more resistance.",
   "Treadmill": "Walk or jog. Easy = a pace you can talk at. Hard = faster, or add incline.",
