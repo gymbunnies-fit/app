@@ -35,7 +35,7 @@ import { focusSaved, openKey, stretchBox, viewToday } from "./views/workout.js";
 
 // ---------------------------------------------------------------- helpers
 // Shown at the bottom of Settings so you can tell whether a phone has the latest update. Bump with sw.js VERSION.
-const APP_VERSION = "68";
+const APP_VERSION = "69";
 // The app's name lives here only (plus app-v41.webmanifest and the <title> tags in index.html, which can't read JS).
 const APP_NAME = "GymBunnies.fit";
 const $ = (s, r = document) => r.querySelector(s);
@@ -486,6 +486,9 @@ const putDraft = (u, date, id, d) => store.set(dKey(u, date, id), d);
 
 // Extra exercises added for a day but not saved yet.
 const xKey = (u, date) => `twp-extra-${u}-${date}-${slotKey()}`;
+// "Just skip today": planned exercises hidden for one date only. The plan itself doesn't change.
+const skipKey = (u, date) => `twp-skip-${u}-${date}-${slotKey()}`;
+const skippedToday = (u, date) => store.get(skipKey(u, date), []);
 const getExtras = (u, date) => store.get(xKey(u, date), []);
 
 function todaysList(u, date) {
@@ -494,8 +497,9 @@ function todaysList(u, date) {
   const edits = dayEdits(u, week, day);
   let base = planDay(u, week, day).ex;
   if (day !== "Bonus" && isHome(u, date)) base = PG.homeVersion(planProf(u), base).map(id => resolveEx(id, {})).filter(Boolean);
-  const list = base.filter(ex => !edits.remove.includes(ex.id) && tailorFor(u, ex.id)?.v !== "drop").map(ex => ({ ex, added: false }));
-  for (const id of edits.add) { const ex = resolveEx(id, {}); if (ex && !ex.custom) list.push({ ex, added: false, planned: true }); }
+  const skip = skippedToday(u, date);
+  const list = base.filter(ex => !edits.remove.includes(ex.id) && !skip.includes(ex.id) && tailorFor(u, ex.id)?.v !== "drop").map(ex => ({ ex, added: false }));
+  for (const id of edits.add) { const ex = resolveEx(id, {}); if (ex && !ex.custom && !skip.includes(id)) list.push({ ex, added: false, planned: true }); }
   if (edits.order?.length) list.sort((a, b) => { const ia = edits.order.indexOf(a.ex.id), ib = edits.order.indexOf(b.ex.id); return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib); });
   const ids = new Set(list.map(x => x.ex.id));
   for (const e of s?.exercises || []) if (!ids.has(e.id)) { ids.add(e.id); list.push({ ex: resolveEx(e.id, e), added: true }); }
@@ -831,7 +835,7 @@ function planEditBox(u, week, day) {
   const removed = edits.remove.map(id => ALL_EX[id]).filter(Boolean);
   return `<div class="banner">Editing ${esc(P(u).name)}'s plan for Week ${week} ${dayName(day)}. Move, retarget, or remove exercises on each card below.</div>
     <label class="field">Day name<input type="text" data-act="planTitle" value="${esc(dayTitle(u, week, day))}"></label>
-    ${removed.length ? `<div class="field"><span>Removed from this day</span>${removed.map(e => `<div class="list-item"><span>${esc(e.n)}</span><button class="btn small" data-act="planRestore" data-id="${e.id}">Put back</button></div>`).join("")}</div>` : ""}
+    ${removed.length ? `<div class="field"><span id="plan-removed" tabindex="-1">Removed from this day</span>${removed.map(e => `<div class="list-item"><span>${esc(e.n)}</span><button class="btn small" data-act="planRestore" data-u="${esc(u)}" data-id="${e.id}" aria-label="Put back ${esc(e.n)}">Put back</button></div>`).join("")}</div>` : ""}
     <div class="row"><button class="btn small" data-act="planFromLib">+ Add from the library</button>
       ${other(u) !== u ? `<button class="btn small" data-act="planCopy">Copy this day to ${esc(P(other(u)).name)}</button>` : ""}
       <button class="btn small danger" data-act="planClear">${state.confirmDel === "planClear" ? "Tap again to clear" : "Clear this day"}</button>
@@ -1677,10 +1681,21 @@ document.addEventListener("click", e => {
     case "planEdit": state.planEdit = !state.planEdit; render(); break;
     case "planRemove": {
       const c = cardFor(el); const { week, day } = state.sel;
+      // First tap asks: removing changes this plan day every time it comes around, which is easy to mistake for skipping.
+      if (state.confirmDel !== `rm:${c.u}:${c.id}`) { state.confirmDel = `rm:${c.u}:${c.id}`; render(); A.announce(`Remove ${defOf(c.ex, c.d.variant).name} from every Week ${week} ${dayName(day)}, or just skip it today?`, true); $(`[data-ex="${c.id}"] [data-act="skipToday"]`)?.focus(); break; }
+      state.confirmDel = null;
       editPlan([c.u], [week], day, d => { if (c.id.startsWith("lib-") && d.add.includes(c.id)) d.add = d.add.filter(x => x !== c.id); else if (!d.remove.includes(c.id)) d.remove.push(c.id); });
       toast(`Removed from ${esc(PROFILES[c.u].name)}'s plan.`); break;
     }
-    case "planRestore": { const { week, day } = state.sel; editPlan([LU()], [week], day, d => { d.remove = d.remove.filter(x => x !== el.dataset.id); }); break; }
+    case "skipToday": {
+      const c = cardFor(el); if (!c) break; state.confirmDel = null;
+      const list = skippedToday(c.u, c.date); if (!list.includes(c.id)) store.set(skipKey(c.u, c.date), [...list, c.id]);
+      store.del(dKey(c.u, c.date, c.id)); toast("Skipped for today. The plan stays the same."); render(); break;
+    }
+    case "skipUndo": { const u = LU(), date = LD(); store.set(skipKey(u, date), skippedToday(u, date).filter(x => x !== el.dataset.id)); render(); break; }
+    case "planRemoveCancel": state.confirmDel = null; render(); break;
+    case "planShowRemoved": state.planEdit = true; render(); $("#plan-removed")?.focus(); break;
+    case "planRestore": { const { week, day } = state.sel; const who = el.dataset.u && profileIds().includes(el.dataset.u) ? el.dataset.u : LU(); editPlan([who], [week], day, d => { d.remove = d.remove.filter(x => x !== el.dataset.id); }); break; }
     case "planFromLib": state.addPlan = { who: LU(), week: state.sel.week, day: state.sel.day }; go("gym"); toast("Tap Add to plan on any exercise."); break;
     case "pickLib": { const m = libItem(el.dataset.id); if (m) addExtra({ id: `lib-${m.id}`, name: m.name, kind: m.kind || "load", db: !!m.db, focus: m.focus || [] }); break; }
     case "pickEx": { const ex = ALL_EX[el.dataset.id]; if (ex) addExtra({ id: ex.id, name: ex.n, kind: ex.kind, db: ex.db }); else { const found = state.data.sessions.flatMap(s => s.exercises || []).find(x => x.id === el.dataset.id); if (found) addExtra({ id: found.id, name: found.name, kind: found.kind, db: !!found.db }); } break; }
@@ -2107,4 +2122,4 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 try { const from = sessionStorage.getItem("twp-updated-from"); if (from) { sessionStorage.removeItem("twp-updated-from"); setTimeout(() => toast(from === APP_VERSION ? `Up to date: version ${APP_VERSION}.` : `Updated to version ${APP_VERSION}.`), 800); } } catch { /* ignore */ }
 
 // Shared with the screens in js/views/.
-export { $, APP_VERSION, avatarGrid, cardioFit, hEff, hEnergy, healthCard, noAutoUp, tailorFor, logAfter, allGyms, crewGyms, currentGym, gymById, newGymId, saveMyGyms, updateGym, AVATARS, DIFF, FUN_LEVELS, GROUPS, LD, LU, P, PROFILES, PROFILE_DEFAULTS, THEMES, TODAY, VARIANT_NOTE, a11yOn, aches, autoSel, avatarHtml, baseDay, bonusDates, bonusPickFor, bonusPicker, canSee, cardioProgram, closeOverlay, conflicts, crewCard, crewSettings, cyclePlan, cycleStart, dayEdits, dayName, dayStatus, dayTitle, daysFor, defOf, deloadActive, deloadOf, deloadSuggestion, editKey, esc, funAt, funHeader, getDraft, gymSet, isHome, libItem, listText, nextPlanDay, other, otherSlotOn, paceOf, personToggle, planDay, planEditBox, profileIds, reminders, render, resolveEx, ring, riskBlock, saveProfile, seg, sessionFor, shareOf, slotDate, slotKey, slug, srFor, state, stopAll, store, supersetIdeas, toast, todaysList, vLabel, variantOf, warmupCard, workoutBar, yt, ytStretch };
+export { $, ALL_EX, APP_VERSION, avatarGrid, cardioFit, hEff, hEnergy, healthCard, noAutoUp, tailorFor, logAfter, allGyms, crewGyms, currentGym, gymById, newGymId, saveMyGyms, updateGym, AVATARS, DIFF, FUN_LEVELS, GROUPS, LD, LU, P, PROFILES, PROFILE_DEFAULTS, THEMES, TODAY, VARIANT_NOTE, a11yOn, aches, autoSel, avatarHtml, baseDay, bonusDates, bonusPickFor, bonusPicker, canSee, cardioProgram, closeOverlay, conflicts, crewCard, crewSettings, cyclePlan, cycleStart, dayEdits, dayName, skippedToday, dayStatus, dayTitle, daysFor, defOf, deloadActive, deloadOf, deloadSuggestion, editKey, esc, funAt, funHeader, getDraft, gymSet, isHome, libItem, listText, nextPlanDay, other, otherSlotOn, paceOf, personToggle, planDay, planEditBox, profileIds, reminders, render, resolveEx, ring, riskBlock, saveProfile, seg, sessionFor, shareOf, slotDate, slotKey, slug, srFor, state, stopAll, store, supersetIdeas, toast, todaysList, vLabel, variantOf, warmupCard, workoutBar, yt, ytStretch };

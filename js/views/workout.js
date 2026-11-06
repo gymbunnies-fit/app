@@ -1,5 +1,5 @@
 // The Workout tab: today's plan and logging in one place.
-import { DIFF, LD, LU, P, PROFILES, cardioFit, healthCard, noAutoUp, tailorFor, allGyms, currentGym, TODAY, VARIANT_NOTE, autoSel, baseDay, bonusPickFor, bonusPicker, cardioProgram, conflicts, cycleStart, dayName, dayStatus, dayTitle, daysFor, defOf, deloadActive, deloadOf, deloadSuggestion, editKey, esc, funAt, funHeader, getDraft, gymSet, isHome, libItem, listText, nextPlanDay, other, otherSlotOn, personToggle, planEditBox, reminders, ring, riskBlock, seg, sessionFor, slotDate, slotKey, srFor, state, store, supersetIdeas, todaysList, vLabel, variantOf, warmupCard, workoutBar, yt, ytStretch } from "../app.js";
+import { DIFF, LD, LU, P, PROFILES, cardioFit, healthCard, noAutoUp, tailorFor, allGyms, currentGym, TODAY, VARIANT_NOTE, autoSel, baseDay, bonusPickFor, bonusPicker, cardioProgram, conflicts, cycleStart, dayEdits, dayName, dayStatus, skippedToday, ALL_EX, dayTitle, daysFor, defOf, deloadActive, deloadOf, deloadSuggestion, editKey, esc, funAt, funHeader, getDraft, gymSet, isHome, libItem, listText, nextPlanDay, other, otherSlotOn, personToggle, planEditBox, reminders, ring, riskBlock, seg, sessionFor, slotDate, slotKey, srFor, state, store, supersetIdeas, todaysList, vLabel, variantOf, warmupCard, workoutBar, yt, ytStretch } from "../app.js";
 import * as A from "../a11y.js";
 import * as PG from "../program.js";
 import * as S from "../stats.js";
@@ -12,6 +12,17 @@ import { CARDIO_MACHINES, PAIN_AREAS, STRETCH } from "../plan.js";
 import { safetyFor } from "../safety.js";
 
 // ---------------------------------------------------------------- TODAY (plan + logging in one place)
+// Exercises taken off this plan day (they stay off every time the day comes around), so it's never silent.
+function removedNote(u, week, day) {
+  if (day === "Bonus") return "";
+  const n = dayEdits(u, week, day).remove.filter(id => ALL_EX[id]).length; if (!n) return "";
+  return `<p class="small muted removed-note">${n} ${n === 1 ? "exercise is" : "exercises are"} off ${esc(P(u).name)}'s plan for Week ${esc(week)} ${esc(dayName(day))}. <button class="btn small" data-act="planShowRemoved">See or put back</button></p>`;
+}
+// Exercises skipped just for today, with a way to bring each one back.
+function skippedNote(u, date) {
+  const ids = skippedToday(u, date); if (!ids.length) return "";
+  return `<div class="field skipped-note"><span class="small muted">Skipped today (the plan stays the same):</span>${ids.map(id => { const ex = ALL_EX[id]; const name = ex?.n || libItem(String(id).replace(/^lib-/, ""))?.name || "Exercise"; return `<div class="list-item"><span>${esc(name)}</span><button class="btn small" data-act="skipUndo" data-id="${esc(id)}" aria-label="Bring back ${esc(name)}">Bring back</button></div>`; }).join("")}</div>`;
+}
 function viewToday() {
   const u = LU(), p = P(u), date = LD();
   const { week, day } = state.sel;
@@ -65,7 +76,7 @@ function viewToday() {
       ${s ? `<div class="field"><span id="move-lbl">This workout is saved as Week ${esc(week)} ${esc(dayName(day))}. Move it to:</span><div class="row" role="group" aria-labelledby="move-lbl">${["A", "B"].flatMap(w => daysFor(LU(), w).map(d => [w, d])).filter(([w, d]) => w !== week || d !== day).map(([w, d]) => `<button type="button" class="btn small" data-act="moveWorkout" data-v="${w}${d}">Week ${w} ${dayName(d)}</button>`).join("")}</div></div>` : ""}</div></details>
     <div class="row"><button class="btn small" data-act="planEdit" aria-pressed="${!!state.planEdit}">${state.planEdit ? "Done editing plan" : "Edit this day's plan"}</button>
       ${funAt("medium") && partner !== u ? `<button class="btn small" data-act="hi5">🙌 High-five ${esc(P(partner).name)}</button>` : ""}</div>
-    ${state.planEdit ? planEditBox(u, week, day) : ""}
+    ${state.planEdit ? planEditBox(u, week, day) : removedNote(u, week, day)}
   </section>
   ${focusOn() ? focusSteps(u, date, s, list) : `
   ${A.get().focusMode && state.focusAll ? `<button class="btn block" data-act="focusBack">Back to one step at a time</button>` : ""}
@@ -74,6 +85,7 @@ function viewToday() {
   ${supersetIdeas(u, date, list, s)}
   ${list.length > 1 ? `<div class="ex-all row"><span class="small muted">${done} of ${list.length} exercises done</span><button class="btn small" data-act="exAll" data-v="1">Open all</button><button class="btn small" data-act="exAll" data-v="0">Close all</button></div>` : ""}
   ${list.map(({ ex, added }, i) => exerciseCard(u, date, ex, added, s, i, list.length)).join("")}
+  ${skippedNote(u, date)}
   <button class="btn block add-ex" data-act="openPicker">+ Add an exercise</button>
   ${checkinCard(u, date, s)}`}
   ${s?.startedAt && !s.finishedAt ? `<button class="btn primary block" data-act="finishWorkout">Finish workout</button>` : ""}`;
@@ -212,7 +224,9 @@ function exerciseCard(u, date, ex, added, s, idx = 0, count = 0, cardOpts = {}) 
     ${state.planEdit && !added ? `<div class="plan-tools"><span class="small muted">Plan for Week ${state.sel.week} ${dayName(state.sel.day)}</span>
       <div class="row"><button class="btn small" data-act="planMove" data-v="-1" ${idx === 0 ? "disabled" : ""} aria-label="Move up">↑</button><button class="btn small" data-act="planMove" data-v="1" ${idx >= count - 1 ? "disabled" : ""} aria-label="Move down">↓</button>
       <label class="field" style="flex:1;min-width:120px">Target<input type="text" data-act="planSr" value="${esc(target)}"></label>
-      <button class="btn small danger" data-act="planRemove">Remove</button></div></div>` : ""}
+      ${state.confirmDel === `rm:${u}:${ex.id}` ? "" : `<button class="btn small danger" data-act="planRemove">Remove</button>`}</div>
+      ${state.confirmDel === `rm:${u}:${ex.id}` ? `<div class="confirm-box" role="group" aria-labelledby="rmq-${ex.id}"><p class="small" id="rmq-${ex.id}"><b>Remove ${esc(def.name)} from every Week ${state.sel.week} ${dayName(state.sel.day)}?</b> It stays off this day until you put it back. To leave it out just this once, skip it today instead.</p>
+        <div class="row"><button class="btn small" data-act="skipToday">Just skip today</button><button class="btn small danger" data-act="planRemove">Remove from the plan</button><button class="btn small" data-act="planRemoveCancel">Cancel</button></div></div>` : ""}</div>` : ""}
     ${ex.custom ? "" : `<details class="more"><summary>How-to, video, risks, and stretches</summary>${exPanel(ex, safety, v, lib, why)}</details>`}
   </div></article>`;
 }

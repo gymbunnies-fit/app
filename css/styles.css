@@ -1075,3 +1075,8 @@ body.a11y-colorSafe .seg button[aria-checked="true"]{text-decoration:underline;t
   #overlay .hf-print a{color:#000}
   .no-print{display:none!important}
 }
+/* Remove-from-plan confirm (v69): removing changes the plan day every time, so ask first and offer skipping today. */
+.confirm-box{margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2,transparent)}
+.confirm-box .row{flex-wrap:wrap;row-gap:8px}
+.removed-note,.skipped-note{margin:8px 0}
+.removed-note .btn{margin-left:6px}
