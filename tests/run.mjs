@@ -125,7 +125,7 @@ for (const b of BUILTIN) {
 {
   const { PLAN_MACHINES, MACHINES } = await import(join(dir, "library.js"));
   const { ALL_EX } = await import(join(dir, "plan.js"));
-  yes("24 machine names covered (25 entries: fly + rear delt share a machine)", MACHINES.length === 25);
+  yes("27 machine names covered (28 entries: fly + rear delt share a machine)", MACHINES.length === 28);
   for (const [pid, ids] of Object.entries(PLAN_MACHINES)) { yes(`plan exercise ${pid} exists`, !!ALL_EX[pid]); for (const id of ids) yes(`${pid} → ${id} exists`, MACHINES.some(m => m.id === id)); }
   for (const m of MACHINES) yes(`${m.id} has a setup tip and isn't a dumbbell`, m.tip.length > 20 && m.equip === "machine" && m.db === false);
 }

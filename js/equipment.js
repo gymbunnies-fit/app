@@ -49,7 +49,7 @@ export const EQUIPMENT = [
   E("rig", "Rig or wall bars", "bench", "crossfit rig monkey bars"),
   // cables
   E("cable-single", "Single cable column", "cable", "cable pulley adjustable pulley cable station"),
-  E("cable-dual", "Dual cable machine", "cable", "functional trainer dual adjustable pulley freemotion"),
+  E("cable-dual", "Dual cable machine", "cable", "functional trainer dual adjustable pulley freemotion life fitness cable station"),
   E("cable-crossover", "Cable crossover", "cable", "crossover station cable tower"),
   E("lat-pulldown", "Lat pulldown", "cable", "pulldown pull-down lat machine"),
   E("cable-row", "Seated cable row", "cable", "low row cable row station"),
