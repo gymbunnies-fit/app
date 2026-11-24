@@ -294,6 +294,12 @@ export const MACHINES = [
     [["shoulders", "Front-of-shoulder pinching, more likely than on a flat press", "Set the seat so the handles start at upper-chest height, keep elbows slightly tucked, and skip the deepest part of the stretch if your shoulder complains."],
      ["neck", "Neck tension from pushing the head into the pad", "Keep your head resting, chin slightly tucked."]],
     { uni: true, mts: true, focus2: ["shoulders", "arms"], tip: "Handles should start at upper-chest height, not shoulder height. Too low a seat turns it into a shoulder press." }),
+  M("m-super-incline", "Hammer Strength Super Incline Press", ["chest"], "push", [2, 2, 0], "seated", { shoulders: 2, elbows: 1, wrists: 1 }, "3 × 8–12",
+    "Plate-loaded, steeper than a regular incline. Press up and slightly back over your head line, then lower slowly until the handles are near your upper chest. Hits the upper chest and the front of the shoulders. Each arm moves on its own.",
+    [["shoulders", "Front-of-shoulder pinching; the steep angle loads the shoulders more than a regular incline", "Keep elbows tucked about 45° and stop the lowering when your hands reach upper-chest level. Go lighter if your shoulder complains."],
+     ["lowerBack", "Arching off the pad to push heavier plates", "Keep your back and hips on the pad and feet flat."],
+     ["neck", "Neck tension from pushing the head into the pad", "Keep your head resting, chin slightly tucked."]],
+    { uni: true, focus2: ["shoulders", "arms"], tip: "Plate-loaded: the arms alone weigh about 11 lb (5 kg) per side before plates, so count that in. Set the seat so the handles start at upper-chest height." }),
   M("m-pec-fly", "Pectoral Fly", ["chest"], "isolation", [1, 1, 0], "seated", { shoulders: 2, elbows: 1 }, "3 × 12–15",
     "Arms out wide with a slight bend in the elbows. Bring the handles together in front of your chest like hugging a barrel, squeeze, then open slowly.",
     [["shoulders", "Shoulder or chest strain at the wide stretch", "Set the start position so your hands are just behind your chest, not far behind. Light weight, slow on the way back."],
@@ -568,13 +574,13 @@ export function normalizeLib(e) {
 
 // Which of our machines can stand in for each plan exercise. Shown as "At our gym" buttons on the Workout tab.
 export const PLAN_MACHINES = {
-  "a-mon-cp": ["m-chest-press", "m-mts-chest-press"], "a-mon-inc": ["m-mts-incline"], "a-mon-sp": ["m-shoulder-press", "m-mts-shoulder-press"],
+  "a-mon-cp": ["m-chest-press", "m-mts-chest-press"], "a-mon-inc": ["m-mts-incline", "m-super-incline"], "a-mon-sp": ["m-shoulder-press", "m-mts-shoulder-press"],
   "a-mon-push": ["m-triceps-ext", "m-triceps-press"], "a-mon-fly": ["m-pec-fly"],
   "a-tue-pd": ["m-lat-pulldown", "m-mts-pulldown"], "a-tue-row": ["m-seated-row", "m-mts-row"], "a-tue-pu": ["m-assist"], "a-tue-bext": ["m-back-ext"],
   "a-tue-rdelt": ["m-rear-delt"], "a-tue-curl": ["m-arm-curl", "m-biceps-curl"],
   "a-wed-sq": ["m-leg-press"], "a-wed-curl": ["m-leg-curl"], "a-wed-ext": ["m-leg-ext"],
   "a-thu-goblet": ["m-leg-press"], "a-thu-curl": ["m-biceps-curl", "m-arm-curl"], "a-thu-calf": ["m-calf"],
-  "b-mon-inc": ["m-mts-incline"], "b-mon-fly": ["m-pec-fly"], "b-mon-sp": ["m-shoulder-press", "m-mts-shoulder-press"], "b-mon-dip": ["m-assist", "m-triceps-press"], "b-mon-ohext": ["m-triceps-ext"],
+  "b-mon-inc": ["m-mts-incline", "m-super-incline"], "b-mon-fly": ["m-pec-fly"], "b-mon-sp": ["m-shoulder-press", "m-mts-shoulder-press"], "b-mon-dip": ["m-assist", "m-triceps-press"], "b-mon-ohext": ["m-triceps-ext"],
   "b-tue-cgpd": ["m-mts-pulldown", "m-lat-pulldown"], "b-tue-csrow": ["m-mts-row", "m-seated-row"], "b-tue-bext": ["m-back-ext"], "b-tue-face": ["m-rear-delt"], "b-tue-hammer": ["m-arm-curl", "m-biceps-curl"],
   "b-wed-lp": ["m-leg-press"], "b-wed-curl": ["m-leg-curl"],
   "b-thu-rot": ["m-rotary-torso"], "b-thu-hold": ["m-back-ext"], "b-thu-goblet": ["m-leg-press"], "b-thu-curl": ["m-arm-curl", "m-biceps-curl"], "b-thu-calf": ["m-calf"]

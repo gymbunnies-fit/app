@@ -89,7 +89,7 @@ export const EQUIPMENT = [
   E("belt-squat", "Belt squat", "machine", ""),
   // plate-loaded and lever (including Hammer Strength MTS)
   E("plate-chest-press", "Plate-loaded chest press", "plate", "hammer strength iso-lateral chest press"),
-  E("plate-incline", "Plate-loaded incline press", "plate", "hammer strength incline"),
+  E("plate-incline", "Plate-loaded incline press", "plate", "hammer strength incline iso-lateral super incline"),
   E("plate-shoulder", "Plate-loaded shoulder press", "plate", "hammer strength shoulder press"),
   E("plate-row", "Plate-loaded row", "plate", "hammer strength row iso-lateral row high row low row"),
   E("plate-pulldown", "Plate-loaded pulldown", "plate", "hammer strength front pulldown"),
